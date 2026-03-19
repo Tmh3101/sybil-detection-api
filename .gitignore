@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Test / coverage / type checking
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Build / distribution artifacts
+build/
+dist/
+*.egg-info/
+
+# Databases / local storage
+*.sqlite3
+
+# Logs
+*.log
+
+# IDE / editor settings
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
