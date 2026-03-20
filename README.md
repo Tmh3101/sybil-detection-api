@@ -1,129 +1,153 @@
-# Web3 Sybil Detection API
+# 🌐 Lens Protocol Sybil Detection API
 
-FastAPI backend and Modal GPU worker for Module 1 of a Web3 Sybil Detection dashboard.
-The API starts asynchronous discovery jobs, polls task status, and returns graph data (`nodes` + `links`) for frontend visualization.
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg)](https://fastapi.tiangolo.com/)
+[![Modal](https://img.shields.io/badge/Modal-Serverless_GPU-000000.svg)](https://modal.com/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.1.2-EE4C2C.svg)](https://pytorch.org/)
 
-## What this project does
+A robust backend and serverless GPU worker for discovering and annotating Sybil accounts in Web3 social graphs. This project implements **Module 1: Sybil Discovery Engine**, utilizing Graph Autoencoders (GAE) and Graph Attention Networks (GAT) to identify anomalous clusters on the Lens Protocol.
 
-- Exposes HTTP endpoints for Sybil discovery workflows.
-- Uses Modal Serverless GPU to run the AI pipeline asynchronously (`.spawn()`).
-- Returns task status in a polling-friendly format: `PROCESSING`, `COMPLETED`, `FAILED`.
-- Provides mock fallback behavior when Modal is not deployed yet, so frontend integration can continue.
+---
 
-## Tech Stack
+## ✨ Key Features
 
-- Python 3.11+ (project currently runs on newer Python versions too)
-- FastAPI + Pydantic
-- Modal (serverless compute)
-- NetworkX, Scikit-learn
-- PyTorch + PyTorch Geometric (in Modal worker image)
+- **Train-on-the-fly Pipeline**: Reconstructs social graphs and trains ML models dynamically based on query time ranges.
+- **Serverless GPU Execution**: Offloads heavy ML workloads to [Modal](https://modal.com/) for scalable, on-demand GPU compute.
+- **Deep Graph Analysis**: Combines Semantic Text Embeddings (S-BERT) with On-chain behavioral features.
+- **Hybrid AI Architecture**: Uses **GAE + GAT** for unsupervised representation learning followed by **K-Means** and **Heuristic Pseudo-labeling**.
+- **Full Data Provenance**: Seamlessly integrates with Google BigQuery to pull Lens Protocol mainnet data.
 
-## Project Structure
+---
+
+## 🏗️ Architecture Overview
+
+The system consists of a FastAPI gateway that spawns serverless jobs on Modal. The worker pulls data, builds a PyTorch Geometric graph, trains the GAE model, and returns a labeled risk graph.
+
+```mermaid
+sequenceDiagram
+  actor User as User (Frontend)
+  participant API as FastAPI (Backend)
+  participant Modal as Modal (GPU Worker)
+  participant BigQuery as Google BigQuery
+
+  User->>API: POST /sybil/discovery/start
+  API->>Modal: spawn(payload)
+  Modal->>BigQuery: Fetch Nodes & Edges
+  BigQuery-->>Modal: Raw Data
+  Modal->>Modal: Feature Engineering & GAE Training
+  Modal->>Modal: K-Means & Heuristics Labeling
+  Modal-->>API: Job Result (JSON)
+  User->>API: GET /sybil/discovery/status/{task_id}
+  API-->>User: Labeled Graph Data
+```
+
+> [!TIP]
+> For a deep dive into the ML pipeline and SQL queries, see the [Detailed Workflow Documentation](docs/module1_detailed_workflow.md).
+
+---
+
+## 🛠️ Tech Stack
+
+- **Backend Gateway**: FastAPI, Pydantic v2, Uvicorn.
+- **ML Infrastructure**: Modal (Serverless GPU).
+- **ML Libraries**:
+  - `torch` & `torch_geometric` (GAT, GAE).
+  - `sentence-transformers` (all-MiniLM-L6-v2).
+  - `scikit-learn` (K-Means, MinMaxScaler).
+- **Data Engineering**: `google-cloud-bigquery`, `pandas`, `networkx`.
+
+---
+
+## 📁 Project Structure
 
 ```text
 .
 ├── app/
-│   ├── api/v1/endpoints/sybil.py      # REST endpoints
-│   ├── schemas/sybil.py               # Request/response contracts
-│   ├── services/sybil_service.py      # Modal spawn + polling logic
-│   └── main.py                        # FastAPI entrypoint
+│   ├── api/v1/             # API Router and Endpoints
+│   ├── core/               # Configuration and Settings
+│   ├── schemas/            # Pydantic Data Models
+│   ├── services/           # Business Logic (Modal orchestration)
+│   └── main.py             # FastAPI Application Entrypoint
+├── docs/
+│   ├── colab-code/         # Experimental Research Code
+│   └── module1_workflow.md # Technical Deep Dives
 ├── modal_worker/
-│   └── app.py                         # Modal App + GPU pipeline function
-├── requirements.txt
-└── .env.example
+│   └── app.py              # Modal Worker Implementation
+├── .env.example            # Environment Template
+└── requirements.txt        # Local dependencies
 ```
 
-## API Contract (Module 1)
+---
 
-- `POST /api/v1/sybil/discovery/start`
-  - Body: `DiscoveryRequest`
-  - Returns: `DiscoveryStatusResponse` with `task_id`
-- `GET /api/v1/sybil/discovery/status/{task_id}`
-  - Returns: `DiscoveryStatusResponse` including `graph_data` when completed
+## 🚀 Getting Started
 
-## Quick Start
+### 1. Prerequisites
 
-### 1) Install dependencies
+- Python 3.11+
+- [Modal Account](https://modal.com/signup)
+- Google Cloud Service Account with BigQuery access.
+
+### 2. Local Setup
 
 ```bash
+# Clone and install
+git clone <repo-url>
+cd sybil-detection-api
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 2) Configure environment
-
-```bash
+# Configure environment
 cp .env.example .env
 ```
 
-Fill in Modal credentials in `.env`:
+### 3. Deploy Modal Worker
 
-```env
-MODAL_TOKEN_ID=your_modal_token_id
-MODAL_TOKEN_SECRET=your_modal_token_secret
-```
-
-> [!NOTE]
-> The backend can still run without a deployed Modal app. In that case it falls back to mock task IDs/data for integration testing.
-
-### 3) Run FastAPI
-
-```bash
-uvicorn app.main:app --reload
-```
-
-API base URL: `http://127.0.0.1:8000`
-
-## Deploy the Modal Worker
-
-The backend expects Modal app name `sybil-discovery-engine` and function `train_gae_pipeline`.
+> [!IMPORTANT]
+> You must have `modal` CLI configured (`modal token set`).
 
 ```bash
 modal deploy modal_worker/app.py
 ```
 
-After deployment, `start_discovery` will call:
-
-- `modal.Function.lookup("sybil-discovery-engine", "train_gae_pipeline")`
-- `modal_func.spawn(payload)`
-
-## End-to-End Test Flow
-
-### Start discovery job
+### 4. Run the API Gateway
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/api/v1/sybil/discovery/start" \
+uvicorn app.main:app --reload
+```
+
+---
+
+## 📡 API Usage Examples
+
+### Start Discovery Job
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/sybil/discovery/start" \
   -H "Content-Type: application/json" \
   -d '{
     "time_range": {
-      "start_date": "2025-01-01",
-      "end_date": "2025-01-31"
-    },
-    "max_nodes": 2000
+      "start_date": "2025-12-01 00:00:00",
+      "end_date": "2025-12-07 00:00:00"
+    }
   }'
 ```
 
-### Poll status
+### Poll Status and Retrieve Graph
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/sybil/discovery/status/<task_id>"
+curl "http://localhost:8000/api/v1/sybil/discovery/status/<task_id>"
 ```
 
-## Behavior Notes
+---
 
-- `PROCESSING`: Modal job is still running (`TimeoutError` during `call.get(timeout=0)`).
-- `COMPLETED`: `graph_data` is returned in `nodes` / `links` format.
-- `FAILED`: worker error or invalid task id (message included).
-- Mock task IDs (`"mock"` in `task_id`) return deterministic sample graph data for UI testing.
+## 🧠 Core ML Pipeline
 
-## Current Scope
+1.  **Data Ingestion**: Pulls account metadata and interactions (Follow, Comment, Quote) from BigQuery.
+2.  **Feature Engineering**: Concatenates 384D Text Embeddings with normalized on-chain stats (Follower count, Post frequency, etc.).
+3.  **Unsupervised Representation**: A **Graph Autoencoder** with a **GAT Encoder** learns structural node embeddings.
+4.  **Clustering**: **K-Means** identifies communities within the embedding space.
+5.  **Heuristic Scoring**: An additive risk engine evaluates clusters based on shared ownership, creation time proximity, and profile similarity.
 
-This repository contains the Module 1 skeleton pipeline:
-
-- Dummy graph generation with NetworkX
-- Embedding simulation and KMeans clustering in Modal worker
-- Backend-ready graph JSON response for dashboard rendering
-
-It is designed as a foundation for replacing dummy logic with real GAE training and on-chain feature engineering.
-
+> [!NOTE]
+> The system defaults to **Mock Mode** if Modal is unavailable, providing deterministic data for frontend development.

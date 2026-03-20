@@ -1,91 +1,378 @@
 from __future__ import annotations
 
-import random
-
 import modal
 
+# Phase 1: Môi trường & Kéo Dữ Liệu (Data Ingestion)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
         "torch==2.1.2",
         index_url="https://download.pytorch.org/whl/cu121",
     )
-    .pip_install("torch_geometric", "scikit-learn", "networkx")
+    .pip_install(
+        "torch_geometric",
+        "scikit-learn",
+        "networkx",
+        "google-cloud-bigquery",
+        "db-dtypes",
+        "pandas",
+        "sentence-transformers==2.7.0",
+        "numpy<2.0.0",
+        "transformers==4.36.2",
+    )
 )
 
-app = modal.App("sybil-discovery-engine", image=image)
+# Khai báo app với Secret để truy cập Google BigQuery
+app = modal.App(
+    "sybil-discovery-engine",
+    image=image,
+    secrets=[modal.Secret.from_name("gcp-sybil-secret")],
+)
+
+
+def fetch_bigquery_data(start_date: str, end_date: str):
+    """
+    Truy xuất dữ liệu đầy đủ từ Lens Protocol trên BigQuery (Tham khảo build_datasets.py).
+    """
+    import os
+    import json
+    import pandas as pd
+    from google.cloud import bigquery
+    from google.oauth2 import service_account
+
+    # Đọc nội dung JSON từ Modal Secret (GOOGLE_APPLICATION_CREDENTIALS chứa JSON string)
+    creds_json_str = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    
+    if creds_json_str:
+        try:
+            creds_dict = json.loads(creds_json_str)
+            credentials = service_account.Credentials.from_service_account_info(creds_dict)
+            client = bigquery.Client(
+                credentials=credentials, 
+                project=creds_dict.get("project_id"), 
+                location="US"
+            )
+        except json.JSONDecodeError:
+            print("[Error] GOOGLE_APPLICATION_CREDENTIALS không phải là JSON hợp lệ. Thử mặc định.")
+            client = bigquery.Client(location="US")
+    else:
+        client = bigquery.Client(location="US")
+
+    # SQL lấy danh sách tài khoản (Nodes) kèm theo đầy đủ đặc trưng on-chain
+    query_nodes = f"""
+    SELECT
+        `lens-protocol-mainnet.app.FORMAT_HEX`(meta.account) as profile_id,
+        ANY_VALUE(meta.created_on) as created_on,
+        ANY_VALUE(meta.name) as display_name,
+        ANY_VALUE(meta.metadata) as raw_metadata,
+        ANY_VALUE(`lens-protocol-mainnet.app.FORMAT_HEX`(ksw.owned_by)) as owned_by,
+        ARRAY_AGG(usr.local_name ORDER BY usr.timestamp DESC LIMIT 1)[OFFSET(0)] as handle,
+        ARRAY_AGG(score.score ORDER BY score.generated_at DESC LIMIT 1)[OFFSET(0)] as trust_score,
+        -- Thống kê hành vi on-chain
+        ANY_VALUE(ps.total_posts) as total_posts,
+        ANY_VALUE(ps.total_comments) as total_comments,
+        ANY_VALUE(ps.total_reposts) as total_mirrors,
+        ANY_VALUE(ps.total_collects) as total_collects,
+        ANY_VALUE(fs.total_followers) as total_followers,
+        ANY_VALUE(fs.total_following) as total_following
+    FROM `lens-protocol-mainnet.account.metadata` as meta
+    LEFT JOIN `lens-protocol-mainnet.username.record` as usr
+        ON meta.account = usr.account
+    LEFT JOIN `lens-protocol-mainnet.account.known_smart_wallet` as ksw
+        ON meta.account = ksw.address
+    LEFT JOIN `lens-protocol-mainnet.ml.account_score` as score
+        ON meta.account = score.account
+    LEFT JOIN `lens-protocol-mainnet.account.post_summary` as ps
+        ON meta.account = ps.account
+    LEFT JOIN `lens-protocol-mainnet.account.follower_summary` as fs
+        ON meta.account = fs.account
+    WHERE meta.created_on >= '{start_date}'
+      AND meta.created_on < '{end_date}'
+    GROUP BY 1
+    """
+
+    # SQL lấy quan hệ Follow thực tế
+    query_edges_follow = f"""
+    WITH TargetUsers AS (
+        SELECT account
+        FROM `lens-protocol-mainnet.account.metadata`
+        WHERE created_on >= '{start_date}'
+          AND created_on < '{end_date}'
+    )
+    SELECT DISTINCT
+        `lens-protocol-mainnet.app.FORMAT_HEX`(f.account_follower) as source,
+        `lens-protocol-mainnet.app.FORMAT_HEX`(f.account_following) as target,
+        'FOLLOW' as type
+    FROM `lens-protocol-mainnet.account.follower` as f
+    JOIN TargetUsers as t1 ON f.account_follower = t1.account
+    JOIN TargetUsers as t2 ON f.account_following = t2.account
+    """
+
+    # SQL lấy quan hệ Interaction (Comment/Quote)
+    query_edges_interact = f"""
+    WITH TargetUsers AS (
+        SELECT account
+        FROM `lens-protocol-mainnet.account.metadata`
+        WHERE created_on >= '{start_date}'
+          AND created_on < '{end_date}'
+    )
+    SELECT
+        `lens-protocol-mainnet.app.FORMAT_HEX`(p.account) as source,
+        `lens-protocol-mainnet.app.FORMAT_HEX`(parent.account) as target,
+        CASE WHEN p.parent_post IS NOT NULL THEN 'COMMENT' ELSE 'QUOTE' END as type
+    FROM `lens-protocol-mainnet.post.record` as p
+    JOIN `lens-protocol-mainnet.post.record` as parent ON (p.parent_post = parent.id OR p.quoted_post = parent.id)
+    JOIN TargetUsers t1 ON p.account = t1.account
+    JOIN TargetUsers t2 ON parent.account = t2.account
+    WHERE p.timestamp >= '{start_date}' AND p.timestamp < '{end_date}'
+      AND p.account != parent.account
+    """
+
+    df_nodes = client.query(query_nodes).to_dataframe()
+    df_edges_follow = client.query(query_edges_follow).to_dataframe()
+    df_edges_interact = client.query(query_edges_interact).to_dataframe()
+
+    df_edges = pd.concat([df_edges_follow, df_edges_interact], ignore_index=True)
+
+    # Tích hợp hàm parse_metadata
+    import ast
+
+    def parse_metadata(meta_str):
+        if pd.isna(meta_str) or not meta_str:
+            return pd.Series(["", ""])
+        try:
+            # Đảm bảo parse chuỗi an toàn
+            meta = ast.literal_eval(str(meta_str)).get('lens', {})
+            return pd.Series([meta.get('bio', '') or "", meta.get('picture', '') or ""])
+        except:
+            return pd.Series(["", ""])
+
+    # Apply hàm lên dataframe
+    if "raw_metadata" in df_nodes.columns:
+        df_nodes[['bio', 'picture_url']] = df_nodes['raw_metadata'].apply(parse_metadata)
+        # Cập nhật lại cột has_avatar dựa trên picture_url
+        df_nodes['has_avatar'] = df_nodes['picture_url'].apply(lambda x: 1 if (x and x != "") else 0)
+    else:
+        # Fallback an toàn nếu không tìm thấy cột
+        df_nodes['bio'] = ""
+        df_nodes['picture_url'] = ""
+        df_nodes['has_avatar'] = 0
+
+    # Xử lý các giá trị null trong node features
+    cols_to_fix = ['total_posts', 'total_comments', 'total_mirrors', 'total_collects', 'total_followers', 'total_following']
+    df_nodes[cols_to_fix] = df_nodes[cols_to_fix].fillna(0)
+
+    return df_nodes, df_edges
+
+
+def build_pyg_graph(df_nodes, df_edges):
+    """
+    Xây dựng đồ thị PyTorch Geometric (Full Feature Concatenation).
+    """
+    import torch
+    import numpy as np
+    import pandas as pd
+    from sentence_transformers import SentenceTransformer
+    from torch_geometric.data import Data
+    from sklearn.preprocessing import MinMaxScaler
+
+    # 1. Đặc trưng văn bản (Semantic Text Embedding) - 384 chiều
+    model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    text_data = []
+    onchain_features_raw = []
+
+    for _, row in df_nodes.iterrows():
+        # Text: Sử dụng cột 'bio' đã được parse sẵn từ fetch_bigquery_data
+        bio = row["bio"] if (pd.notnull(row["bio"]) and row["bio"] != "") else ""
+        handle = row["handle"] or "unknown"
+        name = row["display_name"] or "unknown"
+        text_data.append(f"Handle: {handle}. Name: {name}. Bio: {bio}")
+
+        # On-chain raw: Sử dụng cột 'has_avatar' đã được tính toán sẵn
+        onchain_features_raw.append([
+            float(row["has_avatar"]),
+            float(row["total_followers"]),
+            float(row["total_following"]),
+            float(row["total_posts"]),
+            float(row["total_comments"]),
+            float(row["total_mirrors"]),
+            float(row["total_collects"])
+        ])
+
+    # Encode văn bản
+    tensor_text = torch.tensor(model.encode(text_data), dtype=torch.float)
+
+    # Chuẩn hóa On-chain features
+    scaler = MinMaxScaler()
+    onchain_scaled = scaler.fit_transform(np.array(onchain_features_raw))
+    tensor_onchain = torch.tensor(onchain_scaled, dtype=torch.float)
+
+    # NỐI ĐẶC TRƯNG: 384 (text) + 7 (on-chain) = 391 chiều
+    x = torch.cat([tensor_text, tensor_onchain], dim=1)
+
+    # 2. Xây dựng ma trận cạnh
+    node_ids = df_nodes["profile_id"].tolist()
+    id_to_idx = {pid: i for i, pid in enumerate(node_ids)}
+
+    edges_list = []
+    # Thêm cạnh từ BigQuery (Follow/Interact)
+    for _, row in df_edges.iterrows():
+        src, dst = row["source"], row["target"]
+        if src in id_to_idx and dst in id_to_idx:
+            weight = 2.0 if row["type"] == "FOLLOW" else 1.0
+            edges_list.append({"source": src, "target": dst, "type": row["type"], "weight": weight})
+
+    # Thêm cạnh CO-OWNER (Logic Python)
+    df_owned = df_nodes[df_nodes["owned_by"].notnull()]
+    for owned_by, group in df_owned.groupby("owned_by"):
+        if len(group) > 1:
+            pids = group["profile_id"].tolist()
+            import itertools
+            for src, dst in itertools.combinations(pids, 2):
+                edges_list.append({"source": src, "target": dst, "type": "CO-OWNER", "weight": 5.0})
+
+    # Thêm cạnh SIMILARITY (Close Creation Time)
+    df_nodes["created_dt"] = pd.to_datetime(df_nodes["created_on"])
+    df_sorted = df_nodes.sort_values("created_dt")
+    for i in range(len(df_sorted) - 1):
+        diff = (df_sorted.iloc[i+1]["created_dt"] - df_sorted.iloc[i]["created_dt"]).total_seconds()
+        if diff < 5:
+            edges_list.append({
+                "source": df_sorted.iloc[i]["profile_id"],
+                "target": df_sorted.iloc[i+1]["profile_id"],
+                "type": "SIMILARITY",
+                "weight": 3.0
+            })
+
+    edge_sources = [id_to_idx[e["source"]] for e in edges_list]
+    edge_targets = [id_to_idx[e["target"]] for e in edges_list]
+    edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
+    edge_attr = torch.tensor([e["weight"] for e in edges_list], dtype=torch.float).view(-1, 1)
+
+    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+
+    return data, node_ids, edges_list
 
 
 @app.function(gpu="T4", timeout=1800)
 def train_gae_pipeline(payload: dict) -> dict:
     """
-    Module 1 worker pipeline (skeleton):
-    1) Parse request payload
-    2) Create a small dummy transaction graph
-    3) Build node embeddings (mocked for now, GAE-ready structure)
-    4) Cluster embeddings with KMeans
-    5) Return graph data JSON for backend/UI
+    Module 1 worker pipeline (Fixed Ingestion & Engineering):
     """
-    # IMPORTANT: lazy imports so local CLI/client does not require ML deps.
-    import networkx as nx
     import torch
+    import torch.nn.functional as F
+    from torch_geometric.nn import GATConv, GAE
     from sklearn.cluster import KMeans
-    from torch_geometric.nn import GATConv
+    import numpy as np
+    import pandas as pd
 
-    # 1) Read request payload (fallback defaults keep worker resilient).
+    class GATEncoder(torch.nn.Module):
+        def __init__(self, in_channels, out_channels=16):
+            super().__init__()
+            self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.3, edge_dim=1)
+            self.conv2 = GATConv(32 * 4, out_channels, heads=1, concat=False, dropout=0.3, edge_dim=1)
+
+        def forward(self, x, edge_index, edge_attr):
+            x = self.conv1(x, edge_index, edge_attr=edge_attr)
+            x = F.elu(x)
+            x = F.dropout(x, p=0.3, training=self.training)
+            x = self.conv2(x, edge_index, edge_attr=edge_attr)
+            return x
+
+    # 1) Parse
     time_range = payload.get("time_range", {})
-    _start_date = time_range.get("start_date")
-    _end_date = time_range.get("end_date")
-    max_nodes = int(payload.get("max_nodes", 30))
-    num_nodes = max(8, min(max_nodes, 30))
+    start_date = time_range.get("start_date", "2025-12-01 00:00:00")
+    end_date = time_range.get("end_date", "2025-12-07 00:00:00")
 
-    # 2) Build a small dummy graph to mimic Web3 transaction interactions.
-    graph = nx.gnm_random_graph(n=num_nodes, m=max(num_nodes, num_nodes * 2), seed=42)
-    graph = graph.to_directed()
-    for src, dst in graph.edges():
-        graph[src][dst]["weight"] = round(random.uniform(0.1, 1.0), 3)
-        graph[src][dst]["edge_type"] = random.choice(["transfer", "swap", "bridge"])
+    # 2) Fetch Data (No limits, full on-chain stats)
+    df_nodes, df_edges = fetch_bigquery_data(start_date, end_date)
+    if df_nodes.empty:
+        return {"nodes": [], "links": []}
 
-    # 3) Create embeddings skeleton.
-    # Keep a reference to GATConv so this script is ready for real GAE training.
-    _gat = GATConv(in_channels=8, out_channels=8, heads=1, concat=False)
-    _ = _gat
+    # 3) Build PyG graph (Feature Concatenation)
+    data, profile_ids, edges_list = build_pyg_graph(df_nodes, df_edges)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # For now we simulate learned embeddings using random tensors.
-    torch.manual_seed(42)
-    embeddings = torch.randn(num_nodes, 8)
+    # 4) Train GAE
+    model = GAE(GATEncoder(in_channels=data.num_features, out_channels=16)).to(device)
+    data = data.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
 
-    # 4) KMeans clustering on embeddings.
-    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-    cluster_ids = kmeans.fit_predict(embeddings.detach().cpu().numpy())
+    model.train()
+    for epoch in range(100):
+        optimizer.zero_grad()
+        z = model.encode(data.x, data.edge_index, data.edge_attr)
+        loss = model.recon_loss(z, data.edge_index)
+        loss.backward()
+        optimizer.step()
 
-    # 5) Map to backend GraphDataSchema-compatible output.
+    model.eval()
+    with torch.no_grad():
+        node_embeddings = model.encode(data.x, data.edge_index, data.edge_attr).cpu().numpy()
+
+    # 5) KMeans & Heuristics
+    num_nodes = data.num_nodes
+    n_clusters = min(10, num_nodes) if num_nodes > 0 else 1
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    cluster_ids = kmeans.fit_predict(node_embeddings)
+
+    # Heuristics
+    node_risk_scores = np.zeros(num_nodes)
+    node_labels = []
+
+    from collections import defaultdict
+    node_to_edges = defaultdict(list)
+    for e in edges_list:
+        node_to_edges[e["source"]].append(e)
+        node_to_edges[e["target"]].append(e)
+
+    for i in range(num_nodes):
+        pid = profile_ids[i]
+        score = 0.1
+        node_edges = node_to_edges[pid]
+        
+        if any(e["type"] == "CO-OWNER" for e in node_edges): score += 0.5
+        if any(e["type"] == "SIMILARITY" for e in node_edges): score += 0.3
+        
+        trust = df_nodes[df_nodes["profile_id"] == pid].iloc[0]["trust_score"]
+        if trust is not None and float(trust) < 10.0: score += 0.2
+
+        risk_score = min(0.99, score)
+        node_risk_scores[i] = risk_score
+
+        if risk_score >= 0.8: label = "3_MALICIOUS"
+        elif risk_score >= 0.6: label = "2_HIGH_RISK"
+        elif risk_score >= 0.3: label = "1_LOW_RISK"
+        else: label = "0_BENIGN"
+        node_labels.append(label)
+
+    # 6) Format
     nodes = []
-    for node_id in graph.nodes():
-        risk_score = float(min(0.99, abs(float(embeddings[node_id][0])) / 2.0))
-        label = "HIGH_RISK" if risk_score >= 0.7 else "BENIGN"
-        nodes.append(
-            {
-                "id": f"node-{node_id}",
-                "label": label,
-                "cluster_id": int(cluster_ids[node_id]),
-                "risk_score": risk_score,
-                "attributes": {
-                    "address": f"0x{node_id:04x}",
-                    "tx_count": int(graph.degree(node_id)),
-                },
+    for i, pid in enumerate(profile_ids):
+        node_row = df_nodes[df_nodes["profile_id"] == pid].iloc[0]
+        nodes.append({
+            "id": pid,
+            "label": node_labels[i],
+            "cluster_id": int(cluster_ids[i]),
+            "risk_score": float(node_risk_scores[i]),
+            "attributes": {
+                "handle": node_row["handle"] or "unknown",
+                "trust_score": float(node_row["trust_score"]) if pd.notnull(node_row["trust_score"]) else 0.0,
+                "follower_count": int(node_row["total_followers"]) if pd.notnull(node_row["total_followers"]) else 0,
+                "post_count": int(node_row["total_posts"]) if pd.notnull(node_row["total_posts"]) else 0,
+                "picture_url": str(node_row["picture_url"]) if pd.notnull(node_row["picture_url"]) else None,
+                "owned_by": str(node_row["owned_by"]) if pd.notnull(node_row["owned_by"]) else None,
             }
-        )
+        })
 
     links = []
-    for src, dst, attrs in graph.edges(data=True):
-        links.append(
-            {
-                "source": f"node-{src}",
-                "target": f"node-{dst}",
-                "edge_type": attrs.get("edge_type", "transfer"),
-                "weight": float(attrs.get("weight", 0.5)),
-            }
-        )
+    for e in edges_list:
+        links.append({
+            "source": e["source"],
+            "target": e["target"],
+            "edge_type": e["type"],
+            "weight": float(e["weight"])
+        })
 
     return {"nodes": nodes, "links": links}

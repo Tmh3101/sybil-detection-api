@@ -17,6 +17,7 @@ async def start_sybil_discovery(
 
     In the next steps this will enqueue a heavy job to Modal and return a task id.
     """
+    print(f"DiscoveryRequest: {req}")
     return await sybil_service.start_discovery(req=req)
 
 

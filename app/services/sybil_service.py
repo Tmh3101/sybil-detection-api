@@ -29,11 +29,11 @@ class SybilService:
             if modal is None:
                 raise RuntimeError("Modal SDK not available")
 
-            modal_func = modal.Function.lookup(
+            modal_func = modal.Function.from_name(
                 "sybil-discovery-engine",
                 "train_gae_pipeline",
             )
-            call = modal_func.spawn(payload)
+            call = await modal_func.spawn.aio(payload)
             return {"task_id": call.object_id}
         except Exception as e:
             # If the lookup fails because the Modal app hasn't been deployed yet,
@@ -98,11 +98,11 @@ class SybilService:
             }
 
         try:
-            call = modal.functions.FunctionCall.from_id(task_id)
+            call = modal.FunctionCall.from_id(task_id)
 
             # Try to retrieve the result immediately; if Modal is still running
             # the call will raise a TimeoutError.
-            result: Any = call.get(timeout=0)
+            result: Any = await call.get.aio(timeout=0)
 
             return {
                 "task_id": task_id,
@@ -112,16 +112,18 @@ class SybilService:
                 "graph_data": result,
                 "message": None,
             }
-        except TimeoutError:
-            return {
-                "task_id": task_id,
-                "status": "PROCESSING",
-                "progress": 45,
-                "current_step": "RUNNING",
-                "graph_data": None,
-                "message": None,
-            }
         except Exception as exc:
+            # Modal's aio get raises asyncio.TimeoutError (or similar) on timeout.
+            # We check the class name or type to keep it robust.
+            if exc.__class__.__name__ == "TimeoutError":
+                return {
+                    "task_id": task_id,
+                    "status": "PROCESSING",
+                    "progress": 45,
+                    "current_step": "RUNNING",
+                    "graph_data": None,
+                    "message": None,
+                }
             return {
                 "task_id": task_id,
                 "status": "FAILED",
