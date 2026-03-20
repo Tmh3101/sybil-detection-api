@@ -1,10 +1,25 @@
 {
   "version": 1,
   "skills": {
+    "create-readme": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "d0ece1b2164ce1376e4ab6e98d6ac079df3a2a94f5f02224362b6a1ce2516ae9"
+    },
     "fastapi-templates": {
       "source": "wshobson/agents",
       "sourceType": "github",
       "computedHash": "8fdfb9bad6aef892b4f16ef3b07ef5eea3b0497d37eeaeddb07244d657cc8711"
+    },
+    "markdown-documentation": {
+      "source": "aj-geddes/useful-ai-prompts",
+      "sourceType": "github",
+      "computedHash": "bebe932f4f94560dd90ae7534f2a8731edb70a3ca33f96ad8127cb1de4464780"
+    },
+    "modal-serverless-gpu": {
+      "source": "davila7/claude-code-templates",
+      "sourceType": "github",
+      "computedHash": "99bed61085dcc0c5c39a74cd2f3760026f277cc169b4dcb5f602040f4c9b349b"
     },
     "prompt-builder": {
       "source": "github/awesome-copilot",
