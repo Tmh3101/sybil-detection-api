@@ -4,10 +4,10 @@ from app.api.dependencies import get_sybil_service
 from app.schemas.sybil import DiscoveryRequest, DiscoveryStatusResponse
 from app.services.sybil_service import SybilService
 
-router = APIRouter(tags=["sybil"])
+router = APIRouter()
 
 
-@router.post("/sybil/discovery/start", response_model=DiscoveryStatusResponse)
+@router.post("/discovery/start", response_model=DiscoveryStatusResponse)
 async def start_sybil_discovery(
     req: DiscoveryRequest,
     sybil_service: SybilService = Depends(get_sybil_service),
@@ -22,7 +22,7 @@ async def start_sybil_discovery(
 
 
 @router.get(
-    "/sybil/discovery/status/{task_id}",
+    "/discovery/status/{task_id}",
     response_model=DiscoveryStatusResponse,
 )
 async def discovery_status(

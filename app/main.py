@@ -1,9 +1,14 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
+from app.services.inspector_service import load_reference_graph
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -11,11 +16,26 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan events.
 
-    Placeholder for future heavy warm-up work, e.g. loading a NetworkX graph
-    into RAM.
+    Initializes the Graph Backbone by loading the reference graph into RAM.
     """
-    app.state.sybil_graph = None
+    logger.info("Initializing Graph Backbone...")
+    
+    # Paths for data files (hardcoded for now, move to config later)
+    pt_path = "data/graph.pt"
+    meta_path = "data/nodes_full.csv"
+
+    app.state.graph = await load_reference_graph(pt_path, meta_path)
+    
+    logger.info(
+        f"Backbone ready! Nodes: {app.state.graph.number_of_nodes()}, "
+        f"Edges: {app.state.graph.number_of_edges()}"
+    )
+    
     yield
+    
+    # Shutdown logic
+    app.state.graph.clear()
+    logger.info("Graph Backbone cleared.")
 
 
 app = FastAPI(

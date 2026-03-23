@@ -1,27 +1,34 @@
-# 🌐 Lens Protocol Sybil Detection API
+# `module2-task3.5-enrich-relationships.prompt.md`🌐 Lens Protocol Sybil Detection API
 
-[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg)](https://fastapi.tiangolo.com/)
-[![Modal](https://img.shields.io/badge/Modal-Serverless_GPU-000000.svg)](https://modal.com/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.1.2-EE4C2C.svg)](https://pytorch.org/)
+[Python](https://www.python.org/)
+[FastAPI](https://fastapi.tiangolo.com/)
+[Modal](https://modal.com/)
+[PyTorch](https://pytorch.org/)
 
-A robust backend and serverless GPU worker for discovering and annotating Sybil accounts in Web3 social graphs. This project implements **Module 1: Sybil Discovery Engine**, utilizing Graph Autoencoders (GAE) and Graph Attention Networks (GAT) to identify anomalous clusters on the Lens Protocol.
+A robust backend and serverless GPU worker for discovering and annotating Sybil accounts in Web3 social graphs. This project implements a multi-module architecture: **Module 1** for cluster discovery and **Module 2** for real-time profile inspection.
 
 ---
 
 ## ✨ Key Features
 
-- **Train-on-the-fly Pipeline**: Reconstructs social graphs and trains ML models dynamically based on query time ranges.
-- **Serverless GPU Execution**: Offloads heavy ML workloads to [Modal](https://modal.com/) for scalable, on-demand GPU compute.
-- **Deep Graph Analysis**: Combines Semantic Text Embeddings (S-BERT) with On-chain behavioral features.
-- **Hybrid AI Architecture**: Uses **GAE + GAT** for unsupervised representation learning followed by **K-Means** and **Heuristic Pseudo-labeling**.
-- **Full Data Provenance**: Seamlessly integrates with Google BigQuery to pull Lens Protocol mainnet data.
+- **Module 1: Sybil Discovery Engine**: 
+  - **Train-on-the-fly Pipeline**: Reconstructs social graphs and trains ML models dynamically based on query time ranges.
+  - **Deep Graph Analysis**: Combines Semantic Text Embeddings (S-BERT) with On-chain behavioral features.
+  - **Hybrid AI Architecture**: Uses **GAE + GAT** for unsupervised representation learning followed by **K-Means** and **Heuristic Pseudo-labeling**.
+- **Module 2: Profile Inspector**: 
+  - **Real-time Microscope**: Deep-dive into specific profiles with ego-graph visualization and AI-powered risk scoring.
+  - **Hybrid Cache Architecture**: Uses a high-performance **NetworkX Backbone** in RAM for sub-50ms queries.
+  - **On-demand Fallback**: Automatically pulls and embeds missing nodes from BigQuery into the RAM graph.
+- **Serverless GPU Execution**: Offloads heavy ML training and inference to [Modal](https://modal.com/) for scalable, on-demand compute.
+- **Full Data Provenance**: Seamlessly integrates with Google BigQuery for Lens Protocol mainnet data.
 
 ---
 
 ## 🏗️ Architecture Overview
 
-The system consists of a FastAPI gateway that spawns serverless jobs on Modal. The worker pulls data, builds a PyTorch Geometric graph, trains the GAE model, and returns a labeled risk graph.
+The system combines a FastAPI gateway with serverless GPU workers and maintains an in-memory "Reference Graph" for fast local inspection.
+
+### 🛰️ Module 1: Discovery Workflow
 
 ```mermaid
 sequenceDiagram
@@ -41,41 +48,45 @@ sequenceDiagram
   API-->>User: Labeled Graph Data
 ```
 
-> [!TIP]
-> For a deep dive into the ML pipeline and SQL queries, see the [Detailed Workflow Documentation](docs/module1_detailed_workflow.md).
+
+
+### 🔬 Module 2: Inspector (Hybrid Cache)
+
+```mermaid
+graph TD
+    User[User/Frontend] --> API[FastAPI Gateway]
+    API --> RAM{Profile in RAM?}
+    RAM -- Yes --> Ego[Extract Ego-Graph]
+    RAM -- No --> BQ[BigQuery Fallback]
+    BQ --> Embed[Embed in NetworkX]
+    Embed --> Ego
+    Ego --> AI[AI Inference Model]
+    AI --> Response[JSON Response]
+```
+
+
+
+---
+
+## 🧠 Core ML Pipeline (Module 1)
+
+1. **Data Ingestion**: Pulls account metadata and interactions (Follow, Comment, Quote) from BigQuery.
+2. **Feature Engineering**: Concatenates 384D Text Embeddings (S-BERT) with normalized on-chain stats (Follower count, Post frequency, etc.).
+3. **Unsupervised Representation**: A **Graph Autoencoder (GAE)** with a **GAT Encoder** learns structural node embeddings.
+4. **Clustering**: **K-Means** identifies communities within the embedding space.
+5. **Heuristic Scoring**: An additive risk engine evaluates clusters based on shared ownership, creation time proximity, and profile similarity.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Backend Gateway**: FastAPI, Pydantic v2, Uvicorn.
+- **Backend**: FastAPI, Pydantic v2, NetworkX.
 - **ML Infrastructure**: Modal (Serverless GPU).
 - **ML Libraries**:
-  - `torch` & `torch_geometric` (GAT, GAE).
+  - `torch` & `torch-geometric` (GAT, GAE).
   - `sentence-transformers` (all-MiniLM-L6-v2).
   - `scikit-learn` (K-Means, MinMaxScaler).
-- **Data Engineering**: `google-cloud-bigquery`, `pandas`, `networkx`.
-
----
-
-## 📁 Project Structure
-
-```text
-.
-├── app/
-│   ├── api/v1/             # API Router and Endpoints
-│   ├── core/               # Configuration and Settings
-│   ├── schemas/            # Pydantic Data Models
-│   ├── services/           # Business Logic (Modal orchestration)
-│   └── main.py             # FastAPI Application Entrypoint
-├── docs/
-│   ├── colab-code/         # Experimental Research Code
-│   └── module1_workflow.md # Technical Deep Dives
-├── modal_worker/
-│   └── app.py              # Modal Worker Implementation
-├── .env.example            # Environment Template
-└── requirements.txt        # Local dependencies
-```
+- **Data Engineering**: `google-cloud-bigquery`, `pandas`.
 
 ---
 
@@ -83,28 +94,26 @@ sequenceDiagram
 
 ### 1. Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - [Modal Account](https://modal.com/signup)
 - Google Cloud Service Account with BigQuery access.
 
 ### 2. Local Setup
 
 ```bash
-# Clone and install
-git clone <repo-url>
-cd sybil-detection-api
-python -m venv .venv
-source .venv/bin/activate
+# Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
-cp .env.example .env
+# Configure Credentials
+# Place your service account JSON in .creds/service-account-key.json
+mkdir .creds
+cp path/to/your/key.json .creds/service-account-key.json
 ```
 
-### 3. Deploy Modal Worker
-
 > [!IMPORTANT]
-> You must have `modal` CLI configured (`modal token set`).
+> The system prioritizes `.creds/service-account-key.json`. Alternatively, set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
+
+### 3. Deploy Modal Worker
 
 ```bash
 modal deploy modal_worker/app.py
@@ -118,36 +127,28 @@ uvicorn app.main:app --reload
 
 ---
 
-## 📡 API Usage Examples
+## 📡 API Usage
 
-### Start Discovery Job
+### 🛰️ Discovery (Module 1)
 
 ```bash
+# Start Discovery Job
 curl -X POST "http://localhost:8000/api/v1/sybil/discovery/start" \
   -H "Content-Type: application/json" \
-  -d '{
-    "time_range": {
-      "start_date": "2025-12-01 00:00:00",
-      "end_date": "2025-12-07 00:00:00"
-    }
-  }'
+  -d '{"time_range": {"start_date": "2025-12-01", "end_date": "2025-12-07"}}'
+
+# Poll Status
+curl "http://localhost:8000/api/v1/sybil/discovery/status/<task_id>"
 ```
 
-### Poll Status and Retrieve Graph
+### 🔍 Inspector (Module 2)
 
 ```bash
-curl "http://localhost:8000/api/v1/sybil/discovery/status/<task_id>"
+curl "http://localhost:8000/api/v1/inspector/profile/0x1f0c7f46cefd4daceaaf69e080d30fee06578f5a"
 ```
 
 ---
 
-## 🧠 Core ML Pipeline
+> [!TIP]
+> For a deep dive into the ML pipeline, see the [Detailed Workflow Documentation](docs/module1_detailed_workflow.md).
 
-1.  **Data Ingestion**: Pulls account metadata and interactions (Follow, Comment, Quote) from BigQuery.
-2.  **Feature Engineering**: Concatenates 384D Text Embeddings with normalized on-chain stats (Follower count, Post frequency, etc.).
-3.  **Unsupervised Representation**: A **Graph Autoencoder** with a **GAT Encoder** learns structural node embeddings.
-4.  **Clustering**: **K-Means** identifies communities within the embedding space.
-5.  **Heuristic Scoring**: An additive risk engine evaluates clusters based on shared ownership, creation time proximity, and profile similarity.
-
-> [!NOTE]
-> The system defaults to **Mock Mode** if Modal is unavailable, providing deterministic data for frontend development.
