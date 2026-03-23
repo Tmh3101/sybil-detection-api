@@ -88,6 +88,9 @@ async def get_profile_details(profile_id: str, request: Request):
             
         links = []
         for u, v, data in subgraph.edges(data=True):
+            if data == {}:
+                continue;
+
             links.append(LocalGraphLink(
                 source=u,
                 target=v,
