@@ -5,3 +5,8 @@ pydantic-settings
 modal
 networkx
 scikit-learn
+pandas
+torch
+torch-geometric
+sentence-transformers
+joblib

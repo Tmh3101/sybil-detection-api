@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.services.inspector_service import load_reference_graph
+from app.core.model_loader import load_models
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ async def lifespan(app: FastAPI):
     """
     Application lifespan events.
 
-    Initializes the Graph Backbone by loading the reference graph into RAM.
+    Initializes the Graph Backbone and AI Models.
     """
     logger.info("Initializing Graph Backbone...")
     
@@ -30,12 +31,17 @@ async def lifespan(app: FastAPI):
         f"Backbone ready! Nodes: {app.state.graph.number_of_nodes()}, "
         f"Edges: {app.state.graph.number_of_edges()}"
     )
+
+    logger.info("Loading AI Models...")
+    app.state.models = load_models("data")
+    logger.info("AI Models loaded.")
     
     yield
     
     # Shutdown logic
     app.state.graph.clear()
-    logger.info("Graph Backbone cleared.")
+    app.state.models.clear()
+    logger.info("Resources cleared.")
 
 
 app = FastAPI(

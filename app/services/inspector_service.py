@@ -51,7 +51,8 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 picture_url=row.get("picture_url"),
                 owned_by=row.get("owned_by"),
                 bio=row.get("bio", ""),
-                created_on=row.get("created_on")
+                created_on=row.get("created_on"),
+                trust_score=row.get("trust_score")
             )
 
         # Add Edges

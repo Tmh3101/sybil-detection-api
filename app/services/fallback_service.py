@@ -351,7 +351,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                     neighbor_bios = []
                     for n_id in neighbors_to_check:
                         n_bio = G.nodes[n_id].get("bio")
-                        if n_bio and len(n_bio.strip()) > 5:
+                        if n_bio and isinstance(n_bio, str) and len(n_bio.strip()) > 5:
                             valid_neighbors.append(n_id)
                             neighbor_bios.append(n_bio)
                     

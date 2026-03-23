@@ -12,6 +12,7 @@ from app.schemas.inspector import (
 )
 
 from app.services.fallback_service import fetch_and_embed_node
+from app.services.inference_service import evaluate_subgraph
 
 router = APIRouter()
 
@@ -20,6 +21,7 @@ async def get_profile_details(profile_id: str, request: Request):
     """
     Get profile details and its ego-graph (radius=1).
     Checks RAM cache first, falls back to BigQuery if missing.
+    Executes Hybrid AI inference to detect Sybil patterns.
     """
     # Check if the graph backbone is initialized
     if not hasattr(request.app.state, "graph") or request.app.state.graph is None:
@@ -43,7 +45,6 @@ async def get_profile_details(profile_id: str, request: Request):
     try:
         # At this point, profile_id is guaranteed to be in G
         # Extract Ego-graph (radius=1)
-        # undirected=False to keep original directed interaction edges
         subgraph = nx.ego_graph(G, profile_id, radius=1, undirected=False)
         
         # 1. Profile Info
@@ -55,8 +56,21 @@ async def get_profile_details(profile_id: str, request: Request):
             owned_by=node_data.get("owned_by", "")
         )
         
-        # 2. Analysis (Placeholder for AI Inference Phase)
-        analysis = AnalysisInfo()
+        # 2. AI Inference Analysis
+        models = getattr(request.app.state, "models", {})
+        inference_result = await evaluate_subgraph(models, subgraph, profile_id)
+        
+        if inference_result:
+            analysis = AnalysisInfo(
+                sybil_probability=inference_result["risk_score"],
+                classification=inference_result["label"],
+                reasoning=[inference_result["reasoning"]]
+            )
+        else:
+            analysis = AnalysisInfo(
+                classification="INFERENCE_FAILED",
+                reasoning=["The AI models failed to process this subgraph or are not available."]
+            )
         
         # 3. Local Graph
         nodes = []
@@ -66,19 +80,18 @@ async def get_profile_details(profile_id: str, request: Request):
                 attributes={
                     "handle": attrs.get("handle", "unknown"),
                     "picture_url": attrs.get("picture_url", ""),
-                    "owned_by": attrs.get("owned_by", "")
+                    "owned_by": attrs.get("owned_by", ""),
+                    "created_on": attrs.get("created_on", ""),
+                    "trust_score": attrs.get("trust_score", 0.0)
                 }
             ))
             
         links = []
         for u, v, data in subgraph.edges(data=True):
-            if data == {}:
-                continue;
-        
             links.append(LocalGraphLink(
                 source=u,
                 target=v,
-                edge_type=data.get("type", "MENTION"),
+                edge_type=data.get("type", "INTERACT"),
                 weight=data.get("weight", 1.0)
             ))
             
