@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import modal
+# from modal import Mount, asgi_app
 
 # Phase 1: Môi trường & Kéo Dữ Liệu (Data Ingestion)
 image = (
@@ -19,7 +20,12 @@ image = (
         "sentence-transformers==2.7.0",
         "numpy<2.0.0",
         "transformers==4.36.2",
+        "fastapi[standard]", # Thêm cho Module 2
+        "pydantic",          # Thêm cho Module 2
+        "joblib"             # Thêm để load mô hình ML
     )
+    .add_local_dir("./app", remote_path="/root/app")
+    .add_local_dir("./data", remote_path="/root/data")
 )
 
 # Khai báo app với Secret để truy cập Google BigQuery
@@ -376,3 +382,21 @@ def train_gae_pipeline(payload: dict) -> dict:
         })
 
     return {"nodes": nodes, "links": links}
+
+@app.function(
+    image=image,
+    gpu="T4",
+    memory=4096,           # Cấp 4GB RAM cho việc chứa Graph và Model AI
+    startup_timeout=300,   # Chống timeout khi load file Backbone và Models nặng
+    secrets=[modal.Secret.from_name("gcp-sybil-secret")]
+)
+@modal.asgi_app()
+def fastapi_endpoint():
+    """
+    Module 2 worker pipeline (Real-time Inference):
+    Khởi chạy ứng dụng FastAPI, tự động kích hoạt lifespan để nạp Graph và AI Models.
+    """
+    from app.main import app as web_app
+    return web_app
+
+# Deploy: modal deploy modal_worker/app.py
