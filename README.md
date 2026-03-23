@@ -1,4 +1,4 @@
-# `module2-task3.5-enrich-relationships.prompt.md`🌐 Lens Protocol Sybil Detection API
+# 🌐 Lens Protocol Sybil Detection API
 
 [Python](https://www.python.org/)
 [FastAPI](https://fastapi.tiangolo.com/)
@@ -11,11 +11,11 @@ A robust backend and serverless GPU worker for discovering and annotating Sybil 
 
 ## ✨ Key Features
 
-- **Module 1: Sybil Discovery Engine**: 
+- **Module 1: Sybil Discovery Engine**:
   - **Train-on-the-fly Pipeline**: Reconstructs social graphs and trains ML models dynamically based on query time ranges.
   - **Deep Graph Analysis**: Combines Semantic Text Embeddings (S-BERT) with On-chain behavioral features.
   - **Hybrid AI Architecture**: Uses **GAE + GAT** for unsupervised representation learning followed by **K-Means** and **Heuristic Pseudo-labeling**.
-- **Module 2: Profile Inspector**: 
+- **Module 2: Profile Inspector**:
   - **Real-time Microscope**: Deep-dive into specific profiles with ego-graph visualization and AI-powered risk scoring.
   - **Hybrid Cache Architecture**: Uses a high-performance **NetworkX Backbone** in RAM for sub-50ms queries.
   - **On-demand Fallback**: Automatically pulls and embeds missing nodes from BigQuery into the RAM graph.
@@ -48,8 +48,6 @@ sequenceDiagram
   API-->>User: Labeled Graph Data
 ```
 
-
-
 ### 🔬 Module 2: Inspector (Hybrid Cache)
 
 ```mermaid
@@ -63,8 +61,6 @@ graph TD
     Ego --> AI[AI Inference Model]
     AI --> Response[JSON Response]
 ```
-
-
 
 ---
 
@@ -151,4 +147,3 @@ curl "http://localhost:8000/api/v1/inspector/profile/0x1f0c7f46cefd4daceaaf69e08
 
 > [!TIP]
 > For a deep dive into the ML pipeline, see the [Detailed Workflow Documentation](docs/module1_detailed_workflow.md).
-
