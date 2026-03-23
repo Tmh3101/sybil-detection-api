@@ -1,0 +1,33 @@
+name: Modal Deployment
+
+on:
+  push:
+    branches:
+      - main  # Hoặc tên nhánh chính của bạn
+  workflow_dispatch: # Cho phép chạy thủ công
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' # Cache dependencies để tăng tốc
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install modal
+
+      - name: Deploy to Modal
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: |
+          # Triển khai ứng dụng Modal từ thư mục modal_worker
+          modal deploy modal_worker/modal_app.py
