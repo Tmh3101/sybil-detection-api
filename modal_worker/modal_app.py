@@ -24,6 +24,9 @@ image = (
         "pydantic",          # Thêm cho Module 2
         "joblib"             # Thêm để load mô hình ML
     )
+    .run_commands(
+        "python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', device='cpu')\""
+    )
     .add_local_dir("./app", remote_path="/root/app")
     .add_local_dir("./data", remote_path="/root/data")
 )
@@ -387,6 +390,7 @@ def train_gae_pipeline(payload: dict) -> dict:
     image=image,
     gpu="T4",
     memory=4096,           # Cấp 4GB RAM cho việc chứa Graph và Model AI
+    # keep_warm=1,
     startup_timeout=300,   # Chống timeout khi load file Backbone và Models nặng
     secrets=[modal.Secret.from_name("gcp-sybil-secret")]
 )
