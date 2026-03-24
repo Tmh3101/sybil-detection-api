@@ -334,18 +334,43 @@ def train_gae_pipeline(payload: dict) -> dict:
     data, profile_ids, edges_list = build_pyg_graph(df_nodes, df_edges)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # Smart Early Stopping variables
+    max_epochs = 400
+    patience = 30
+    best_loss = float('inf')
+    patience_counter = 0
+    best_weights = None
+    learning_rate = 0.005
+
     # 4) Train GAE
     model = GAE(GATEncoder(in_channels=data.num_features, out_channels=16)).to(device)
     data = data.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     model.train()
-    for epoch in range(100):
+    for epoch in range(max_epochs):
         optimizer.zero_grad()
         z = model.encode(data.x, data.edge_index, data.edge_attr)
         loss = model.recon_loss(z, data.edge_index)
         loss.backward()
         optimizer.step()
+
+        # Early Stopping check
+        current_loss = loss.item()
+        if current_loss < best_loss:
+            best_loss = current_loss
+            patience_counter = 0
+            best_weights = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+        else:
+            patience_counter += 1
+
+        if patience_counter >= patience:
+            print(f"[GAE] Early stopping triggered at epoch {epoch}")
+            break
+
+    # Restore Best Weights
+    if best_weights is not None:
+        model.load_state_dict({k: v.to(device) for k, v in best_weights.items()})
 
     model.eval()
     with torch.no_grad():
