@@ -73,8 +73,25 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
             source_indices = data.edge_index[0].tolist()
             target_indices = data.edge_index[1].tolist()
             
-            # Extract weights if available
+            # Safely extract and flatten weights and types
             weights_list = data.edge_attr.view(-1).tolist() if hasattr(data, "edge_attr") and data.edge_attr is not None else None
+            types_list = data.edge_type.view(-1).tolist() if hasattr(data, "edge_type") and data.edge_type is not None else None
+
+            # Official mapping from the system's WEIGHTS configuration
+            EDGE_TYPE_MAP = {
+                0: "FOLLOW",
+                1: "UPVOTE",
+                2: "REACTION",
+                3: "COMMENT",
+                4: "QUOTE",
+                5: "MIRROR",
+                6: "COLLECT",
+                7: "CO-OWNER",
+                8: "SAME_AVATAR",
+                9: "FUZZY_HANDLE",
+                10: "SIM_BIO",
+                11: "CLOSE_CREATION_TIME"
+            }
             
             # Map indices to profile_ids
             profile_ids = df_meta["profile_id"].astype(str).tolist()
@@ -85,10 +102,19 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                     src_pid = profile_ids[src_idx]
                     tgt_pid = profile_ids[tgt_idx]
                     
-                    # Build edge attribute dictionary
+                    # Resolve Weight
                     w = weights_list[i] if weights_list and i < len(weights_list) else 1.0
-                    edge_data = {"weight": float(w)}
-                    
+
+                    # Resolve Type
+                    t_int = types_list[i] if types_list and i < len(types_list) else -1
+                    t_str = EDGE_TYPE_MAP.get(t_int, "UNKNOWN")
+
+                    # Build attribute dictionary
+                    edge_data = {
+                        "weight": float(w),
+                        "type": t_str
+                    }
+
                     edges.append((src_pid, tgt_pid, edge_data))
                 except IndexError:
                     # Log but continue if indices are slightly out of sync
