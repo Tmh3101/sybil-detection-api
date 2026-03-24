@@ -168,7 +168,12 @@ Initiates an asynchronous GAE pipeline on Modal GPU.
     "start_date": "2025-12-01",
     "end_date": "2025-12-07"
   },
-  "max_nodes": 2000
+  "max_nodes": 2000,
+  "hyperparameters": {
+    "max_epochs": 400,
+    "patience": 30,
+    "learning_rate": 0.005
+  }
 }
 ```
 
@@ -176,7 +181,12 @@ Initiates an asynchronous GAE pipeline on Modal GPU.
 
 ```json
 {
-  "task_id": "fc-1234ABCD"
+  "task_id": "fc-1234ABCD",
+  "status": "PROCESSING",
+  "progress": 0,
+  "current_step": "QUEUED",
+  "graph_data": null,
+  "message": null
 }
 ```
 
@@ -198,18 +208,37 @@ Retrieves job status and labeled graph data upon completion.
     "nodes": [
       {
         "id": "node-1",
-        "label": "HIGH_RISK",
+        "label": "2_HIGH_RISK",
         "cluster_id": 0,
-        "risk_score": 0.92,
-        "attributes": { "address": "0x..." }
+        "risk_score": 0.85,
+        "attributes": {
+          "handle": "risky_user.lens",
+          "trust_score": 5.2,
+          "follower_count": 10,
+          "owned_by": "0x123...",
+          "reason": "Low Trust Score; High Co-owner relationship"
+        }
+      },
+      {
+        "id": "node-2",
+        "label": "0_BENIGN",
+        "cluster_id": 0,
+        "risk_score": 0.05,
+        "attributes": {
+          "handle": "good_user.lens",
+          "trust_score": 9.8,
+          "follower_count": 500,
+          "owned_by": "0x456...",
+          "reason": "None"
+        }
       }
     ],
     "links": [
       {
         "source": "node-1",
         "target": "node-2",
-        "edge_type": "interaction",
-        "weight": 0.7
+        "edge_type": "FOLLOW",
+        "weight": 2.0
       }
     ]
   },
@@ -250,7 +279,10 @@ Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
         "id": "0x123...",
         "attributes": {
           "handle": "vitalik.lens",
-          "trust_score": 95.5
+          "trust_score": 95.5,
+          "picture_url": "https://...",
+          "owned_by": "0x...",
+          "created_on": "2021-05-15"
         }
       }
     ],

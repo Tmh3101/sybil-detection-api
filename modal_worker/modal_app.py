@@ -332,8 +332,8 @@ def train_gae_pipeline(payload: dict) -> dict:
     end_date = time_range.get("end_date", "2025-12-07 00:00:00")
 
     # Hyperparameters from payload
-    max_nodes = max(100, min(payload.get("max_nodes", 2000), 2000))
-    hp = payload.get("hyperparameters", {})
+    max_nodes = max(100, min(payload.get("max_nodes", 2000), 10000))
+    hp = payload.get("hyperparameters") or {}
     max_epochs = max(50, min(hp.get("max_epochs", 400), 1000))
     patience = max(10, min(hp.get("patience", 30), 100))
     learning_rate = max(0.0001, min(hp.get("learning_rate", 0.005), 0.1))

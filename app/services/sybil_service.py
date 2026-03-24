@@ -62,25 +62,41 @@ class SybilService:
                     "nodes": [
                         {
                             "id": "node-1",
-                            "label": "HIGH_RISK",
+                            "label": "2_HIGH_RISK",
                             "cluster_id": 0,
-                            "risk_score": 0.92,
-                            "attributes": {"address": "0xHIGH"},
+                            "risk_score": 0.75,
+                            "attributes": {
+                                "handle": "risky_user.lens",
+                                "trust_score": 5.2,
+                                "follower_count": 10,
+                                "post_count": 100,
+                                "picture_url": None,
+                                "owned_by": "0x123...",
+                                "reason": "Low Trust Score; High Co-owner relationship"
+                            },
                         },
                         {
                             "id": "node-2",
-                            "label": "BENIGN",
+                            "label": "0_BENIGN",
                             "cluster_id": 0,
                             "risk_score": 0.05,
-                            "attributes": {"address": "0xBENIGN"},
+                            "attributes": {
+                                "handle": "good_user.lens",
+                                "trust_score": 9.8,
+                                "follower_count": 500,
+                                "post_count": 50,
+                                "picture_url": "https://...",
+                                "owned_by": "0x456...",
+                                "reason": "None"
+                            },
                         },
                     ],
                     "links": [
                         {
                             "source": "node-1",
                             "target": "node-2",
-                            "edge_type": "interaction",
-                            "weight": 0.7,
+                            "edge_type": "FOLLOW",
+                            "weight": 2.0,
                         },
                     ],
                 },

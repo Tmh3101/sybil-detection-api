@@ -10,9 +10,16 @@ class TimeRange(BaseModel):
     end_date: str
 
 
+class GAEHyperparameters(BaseModel):
+    max_epochs: int = 400
+    patience: int = 30
+    learning_rate: float = 0.005
+
+
 class DiscoveryRequest(BaseModel):
     time_range: TimeRange
     max_nodes: int = 2000
+    hyperparameters: Optional[GAEHyperparameters] = None
 
 
 class NodeSchema(BaseModel):
