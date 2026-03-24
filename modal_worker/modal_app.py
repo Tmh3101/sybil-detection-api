@@ -39,7 +39,7 @@ app = modal.App(
 )
 
 
-def fetch_bigquery_data(start_date: str, end_date: str):
+def fetch_bigquery_data(start_date: str, end_date: str, max_nodes: int = 2000):
     """
     Truy xuất dữ liệu đầy đủ từ Lens Protocol trên BigQuery (Tham khảo build_datasets.py).
     """
@@ -102,6 +102,8 @@ def fetch_bigquery_data(start_date: str, end_date: str):
     WHERE meta.created_on >= '{start_date}'
       AND meta.created_on < '{end_date}'
     GROUP BY 1
+    ORDER BY ANY_VALUE(meta.created_on) DESC
+    LIMIT {max_nodes}
     """
 
     # SQL lấy quan hệ Follow thực tế
@@ -111,6 +113,8 @@ def fetch_bigquery_data(start_date: str, end_date: str):
         FROM `lens-protocol-mainnet.account.metadata`
         WHERE created_on >= '{start_date}'
           AND created_on < '{end_date}'
+        ORDER BY created_on DESC
+        LIMIT {max_nodes}
     )
     SELECT DISTINCT
         `lens-protocol-mainnet.app.FORMAT_HEX`(f.account_follower) as source,
@@ -128,6 +132,8 @@ def fetch_bigquery_data(start_date: str, end_date: str):
         FROM `lens-protocol-mainnet.account.metadata`
         WHERE created_on >= '{start_date}'
           AND created_on < '{end_date}'
+        ORDER BY created_on DESC
+        LIMIT {max_nodes}
     )
     SELECT
         `lens-protocol-mainnet.app.FORMAT_HEX`(p.account) as source,
@@ -325,8 +331,15 @@ def train_gae_pipeline(payload: dict) -> dict:
     start_date = time_range.get("start_date", "2025-12-01 00:00:00")
     end_date = time_range.get("end_date", "2025-12-07 00:00:00")
 
-    # 2) Fetch Data (No limits, full on-chain stats)
-    df_nodes, df_edges = fetch_bigquery_data(start_date, end_date)
+    # Hyperparameters from payload
+    max_nodes = max(100, min(payload.get("max_nodes", 2000), 2000))
+    hp = payload.get("hyperparameters", {})
+    max_epochs = max(50, min(hp.get("max_epochs", 400), 1000))
+    patience = max(10, min(hp.get("patience", 30), 100))
+    learning_rate = max(0.0001, min(hp.get("learning_rate", 0.005), 0.1))
+
+    # 2) Fetch Data (Respecting max_nodes)
+    df_nodes, df_edges = fetch_bigquery_data(start_date, end_date, max_nodes=max_nodes)
     if df_nodes.empty:
         return {"nodes": [], "links": []}
 
@@ -335,12 +348,9 @@ def train_gae_pipeline(payload: dict) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Smart Early Stopping variables
-    max_epochs = 400
-    patience = 30
     best_loss = float('inf')
     patience_counter = 0
     best_weights = None
-    learning_rate = 0.005
 
     # 4) Train GAE
     model = GAE(GATEncoder(in_channels=data.num_features, out_channels=16)).to(device)
