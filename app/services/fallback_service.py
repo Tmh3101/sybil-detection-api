@@ -360,14 +360,8 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                     from sentence_transformers import util
                     logger.info(f"[SIM_BIO CHECK] Bio của node mới: '{new_bio[:50]}...'")
                     
-                    # Optimize: Check 1-hop, 2-hop neighbors
-                    hop1 = set(G.successors(node_data["profile_id"])) | set(G.predecessors(node_data["profile_id"]))
-                    hop2 = set()
-                    for n in hop1:
-                        hop2 |= set(G.successors(n)) | set(G.predecessors(n))
-                    
-                    neighbors_to_check = (hop1 | hop2) - {node_data["profile_id"]}
-                    
+                    # Global Search: Compare against all nodes currently in the RAM graph
+                    neighbors_to_check = [n for n in G.nodes() if n != node_data["profile_id"]]
                     valid_neighbors = []
                     neighbor_bios = []
                     for n_id in neighbors_to_check:
