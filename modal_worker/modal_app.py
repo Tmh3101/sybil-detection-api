@@ -80,7 +80,7 @@ def fetch_bigquery_data(start_date: str, end_date: str, max_nodes: int = 2000):
         -- Thống kê hành vi on-chain
         ANY_VALUE(ps.total_posts) as total_posts,
         ANY_VALUE(ps.total_comments) as total_comments,
-        ANY_VALUE(ps.total_reposts) as total_mirrors,
+        ANY_VALUE(ps.total_reposts) as total_reposts,
         ANY_VALUE(ps.total_collects) as total_collects,
         ANY_VALUE(ps.total_tips) as total_tips,
         ANY_VALUE(ps.total_quotes) as total_quotes,
@@ -197,7 +197,7 @@ def fetch_bigquery_data(start_date: str, end_date: str, max_nodes: int = 2000):
 
     # Xử lý các giá trị null trong node features
     cols_to_fix = [
-        'total_posts', 'total_comments', 'total_mirrors', 'total_collects', 
+        'total_posts', 'total_comments', 'total_reposts', 'total_collects', 
         'total_followers', 'total_following', 'total_tips', 'total_quotes', 
         'total_reacted', 'total_reactions', 'trust_score'
     ]
@@ -238,7 +238,7 @@ def build_pyg_graph(df_nodes, df_edges):
             float(row["total_quotes"]),
             float(row["total_reacted"]),
             float(row["total_reactions"]),
-            float(row["total_mirrors"]),
+            float(row["total_reposts"]),
             float(row["total_collects"]),
             float(row["total_comments"]),
             float(row["total_followers"]),
