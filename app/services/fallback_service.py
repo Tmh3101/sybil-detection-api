@@ -120,6 +120,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         SELECT
             `lens-protocol-mainnet.app.FORMAT_HEX`(meta.account) as profile_id,
             ANY_VALUE(meta.metadata) as raw_metadata,
+            ANY_VALUE(meta.name) as display_name,
             ANY_VALUE(`lens-protocol-mainnet.app.FORMAT_HEX`(ksw.owned_by)) as owned_by,
             ANY_VALUE(meta.created_on) as created_on,
             ARRAY_AGG(usr.local_name ORDER BY usr.timestamp DESC LIMIT 1)[OFFSET(0)] as handle,
@@ -127,8 +128,12 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
             -- Thống kê hành vi on-chain
             ANY_VALUE(ps.total_posts) as total_posts,
             ANY_VALUE(ps.total_comments) as total_comments,
-            ANY_VALUE(ps.total_reposts) as total_mirrors,
+            ANY_VALUE(ps.total_reposts) as total_reposts,
             ANY_VALUE(ps.total_collects) as total_collects,
+            ANY_VALUE(ps.total_tips) as total_tips,
+            ANY_VALUE(ps.total_quotes) as total_quotes,
+            ANY_VALUE(ps.total_reacted) as total_reacted,
+            ANY_VALUE(ps.total_reactions) as total_reactions,
             ANY_VALUE(fs.total_followers) as total_followers,
             ANY_VALUE(fs.total_following) as total_following
         FROM `lens-protocol-mainnet.account.metadata` as meta
@@ -155,12 +160,20 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         node_data = {
             "profile_id": profile_id,
             "handle": str(row.get("handle", "unknown")),
+            "display_name": str(row.get("display_name", "")),
             "picture_url": parse_metadata(row.get("raw_metadata")),
             "owned_by": str(row.get("owned_by", "")),
             "bio": parse_bio(row.get("raw_metadata")),
             "created_on": row["created_on"],
             "trust_score": float(row.get("trust_score", 0.0)) if pd.notna(row.get("trust_score")) else 0.0,
             "total_posts": int(row.get("total_posts", 0)) if pd.notna(row.get("total_posts")) else 0,
+            "total_comments": int(row.get("total_comments", 0)) if pd.notna(row.get("total_comments")) else 0,
+            "total_reposts": int(row.get("total_reposts", 0)) if pd.notna(row.get("total_reposts")) else 0,
+            "total_collects": int(row.get("total_collects", 0)) if pd.notna(row.get("total_collects")) else 0,
+            "total_tips": int(row.get("total_tips", 0)) if pd.notna(row.get("total_tips")) else 0,
+            "total_quotes": int(row.get("total_quotes", 0)) if pd.notna(row.get("total_quotes")) else 0,
+            "total_reacted": int(row.get("total_reacted", 0)) if pd.notna(row.get("total_reacted")) else 0,
+            "total_reactions": int(row.get("total_reactions", 0)) if pd.notna(row.get("total_reactions")) else 0,
             "total_followers": int(row.get("total_followers", 0)) if pd.notna(row.get("total_followers")) else 0,
             "total_following": int(row.get("total_following", 0)) if pd.notna(row.get("total_following")) else 0,
         }
@@ -241,12 +254,20 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         G.add_node(
             node_data["profile_id"],
             handle=node_data["handle"],
+            display_name=node_data["display_name"],
             picture_url=node_data["picture_url"],
             owned_by=node_data["owned_by"],
             bio=node_data["bio"],
             created_on=node_data["created_on"],
             trust_score=node_data["trust_score"],
             total_posts=node_data["total_posts"],
+            total_comments=node_data["total_comments"],
+            total_reposts=node_data["total_reposts"],
+            total_collects=node_data["total_collects"],
+            total_tips=node_data["total_tips"],
+            total_quotes=node_data["total_quotes"],
+            total_reacted=node_data["total_reacted"],
+            total_reactions=node_data["total_reactions"],
             total_followers=node_data["total_followers"],
             total_following=node_data["total_following"],
             is_lazy=True

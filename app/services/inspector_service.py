@@ -48,11 +48,22 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
             G.add_node(
                 str(row["profile_id"]),
                 handle=row.get("handle"),
+                display_name=row.get("display_name"),
                 picture_url=row.get("picture_url"),
                 owned_by=row.get("owned_by"),
                 bio=row.get("bio", ""),
                 created_on=row.get("created_on"),
-                trust_score=row.get("trust_score")
+                trust_score=row.get("trust_score", 0),
+                total_tips=row.get("total_tips", 0),
+                total_posts=row.get("total_posts", 0),
+                total_quotes=row.get("total_quotes", 0),
+                total_reacted=row.get("total_reacted", 0),
+                total_reactions=row.get("total_reactions", 0),
+                total_reposts=row.get("total_reposts", 0),
+                total_collects=row.get("total_collects", 0),
+                total_comments=row.get("total_comments", 0),
+                total_followers=row.get("total_followers", 0),
+                total_following=row.get("total_following", 0)
             )
 
         # Add Edges
