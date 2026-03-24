@@ -62,15 +62,23 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
             source_indices = data.edge_index[0].tolist()
             target_indices = data.edge_index[1].tolist()
             
+            # Extract weights if available
+            weights_list = data.edge_attr.view(-1).tolist() if hasattr(data, "edge_attr") and data.edge_attr is not None else None
+            
             # Map indices to profile_ids
             profile_ids = df_meta["profile_id"].astype(str).tolist()
             
             edges = []
-            for src_idx, tgt_idx in zip(source_indices, target_indices):
+            for i, (src_idx, tgt_idx) in enumerate(zip(source_indices, target_indices)):
                 try:
                     src_pid = profile_ids[src_idx]
                     tgt_pid = profile_ids[tgt_idx]
-                    edges.append((src_pid, tgt_pid))
+                    
+                    # Build edge attribute dictionary
+                    w = weights_list[i] if weights_list and i < len(weights_list) else 1.0
+                    edge_data = {"weight": float(w)}
+                    
+                    edges.append((src_pid, tgt_pid, edge_data))
                 except IndexError:
                     # Log but continue if indices are slightly out of sync
                     continue
