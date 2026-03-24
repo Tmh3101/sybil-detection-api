@@ -388,7 +388,15 @@ def train_gae_pipeline(payload: dict) -> dict:
 
     # 5) KMeans & Heuristics (Cluster-level Scoring)
     num_nodes = data.num_nodes
-    n_clusters = min(10, num_nodes) if num_nodes > 0 else 1
+    if num_nodes > 0:
+        import math
+        # Apply interpolation formula based on 300-node benchmark
+        calculated_k = int(21 * math.sqrt(num_nodes / 300.0))
+        # Ensure K is at least 1, and no greater than the total number of nodes
+        n_clusters = max(1, min(num_nodes, calculated_k))
+    else:
+        n_clusters = 1
+
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     cluster_ids = kmeans.fit_predict(node_embeddings)
 
