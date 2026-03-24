@@ -513,7 +513,11 @@ def train_gae_pipeline(payload: dict) -> dict:
             "weight": float(e["weight"])
         })
 
-    return {"nodes": nodes, "links": links}
+    return {
+        "nodes": nodes,
+        "links": links,
+        "cluster_count": int(n_clusters)
+    }
 
 @app.function(
     image=image,

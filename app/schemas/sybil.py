@@ -40,6 +40,7 @@ class LinkSchema(BaseModel):
 class GraphDataSchema(BaseModel):
     nodes: list[NodeSchema]
     links: list[LinkSchema]
+    cluster_count: Optional[int] = None
 
 
 class DiscoveryStatusResponse(BaseModel):

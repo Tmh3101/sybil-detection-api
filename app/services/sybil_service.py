@@ -99,6 +99,7 @@ class SybilService:
                             "weight": 2.0,
                         },
                     ],
+                    "cluster_count": 10,
                 },
                 "message": None,
             }
