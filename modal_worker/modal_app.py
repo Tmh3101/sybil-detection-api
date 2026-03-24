@@ -351,51 +351,105 @@ def train_gae_pipeline(payload: dict) -> dict:
     with torch.no_grad():
         node_embeddings = model.encode(data.x, data.edge_index, data.edge_attr).cpu().numpy()
 
-    # 5) KMeans & Heuristics
+    # 5) KMeans & Heuristics (Cluster-level Scoring)
     num_nodes = data.num_nodes
     n_clusters = min(10, num_nodes) if num_nodes > 0 else 1
     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     cluster_ids = kmeans.fit_predict(node_embeddings)
 
-    # Heuristics
-    node_risk_scores = np.zeros(num_nodes)
-    node_labels = []
-
+    # Step 1: Map Nodes to Clusters
+    pid_to_cluster = {pid: cluster_ids[i] for i, pid in enumerate(profile_ids)}
+    
+    # Step 2: Filter Internal Edges
     from collections import defaultdict
-    node_to_edges = defaultdict(list)
+    cluster_internal_edges = defaultdict(list)
     for e in edges_list:
-        node_to_edges[e["source"]].append(e)
-        node_to_edges[e["target"]].append(e)
+        src_cluster = pid_to_cluster.get(e["source"])
+        dst_cluster = pid_to_cluster.get(e["target"])
+        if src_cluster is not None and src_cluster == dst_cluster:
+            cluster_internal_edges[src_cluster].append(e)
 
-    for i in range(num_nodes):
-        pid = profile_ids[i]
-        score = 0.1
-        node_edges = node_to_edges[pid]
+    # Step 3 & 4: Calculate Cluster Statistics & Risk Scoring
+    cluster_stats = {}
+    df_nodes['created_dt'] = pd.to_datetime(df_nodes['created_on'], utc=True)
+    
+    for c_id in range(n_clusters):
+        # Nodes in this cluster
+        c_nodes_indices = [i for i, cid in enumerate(cluster_ids) if cid == c_id]
+        c_pids = [profile_ids[i] for i in c_nodes_indices]
+        c_df = df_nodes[df_nodes['profile_id'].isin(c_pids)]
         
-        if any(e["type"] == "CO-OWNER" for e in node_edges): score += 0.5
-        if any(e["type"] == "SIMILARITY" for e in node_edges): score += 0.3
+        size = len(c_nodes_indices)
+        internal_edges = cluster_internal_edges[c_id]
+        total_internal_edges = max(1, len(internal_edges))
         
-        trust = df_nodes[df_nodes["profile_id"] == pid].iloc[0]["trust_score"]
-        if trust is not None and float(trust) < 10.0: score += 0.2
-
-        risk_score = min(0.99, score)
-        node_risk_scores[i] = risk_score
-
-        if risk_score >= 0.8: label = "3_MALICIOUS"
-        elif risk_score >= 0.6: label = "2_HIGH_RISK"
-        elif risk_score >= 0.3: label = "1_LOW_RISK"
-        else: label = "0_BENIGN"
-        node_labels.append(label)
+        # Counts
+        cnt_co_owner = sum(1 for e in internal_edges if e["type"] == "CO-OWNER")
+        cnt_similarity = sum(1 for e in internal_edges if e["type"] == "SIMILARITY")
+        cnt_social = sum(1 for e in internal_edges if e["type"] in ["FOLLOW", "COMMENT", "QUOTE"])
+        
+        # Pct
+        pct_co_owner = cnt_co_owner / total_internal_edges
+        pct_similarity = cnt_similarity / total_internal_edges
+        pct_social = cnt_social / total_internal_edges
+        
+        # Stats
+        avg_trust = c_df['trust_score'].mean() if not c_df.empty else 0
+        if size > 1:
+            std_creation_hours = c_df['created_dt'].std().total_seconds() / 3600.0
+        else:
+            std_creation_hours = 0
+            
+        # Additive Risk Scoring (0 - 100)
+        score = 0
+        reasons = []
+        
+        if pct_co_owner > 0.1:
+            score += 50
+            reasons.append("High Co-owner relationship")
+        if size > 2 and pct_similarity >= 0.6:
+            score += 30
+            reasons.append("High Similarity (Creation Time)")
+        if size > 1 and std_creation_hours < 0.5:
+            score += 15
+            reasons.append("Batch Creation detected")
+        if pct_social <= 0.2:
+            score += 10
+            reasons.append("Low Social interaction")
+        if avg_trust <= 5:
+            score += 20
+            reasons.append("Very Low Trust Score")
+        elif avg_trust <= 8:
+            score += 10
+            reasons.append("Low Trust Score")
+            
+        score = min(100, score)
+        risk_score = score / 100.0
+        
+        # Fuzzy Labeling
+        if score < 20: label = "0_BENIGN"
+        elif score <= 50: label = "1_LOW_RISK"
+        elif score < 80: label = "2_HIGH_RISK"
+        else: label = "3_MALICIOUS"
+        
+        cluster_stats[c_id] = {
+            "label": label,
+            "risk_score": risk_score,
+            "reasons": "; ".join(reasons) if reasons else "None"
+        }
 
     # 6) Format
     nodes = []
     for i, pid in enumerate(profile_ids):
         node_row = df_nodes[df_nodes["profile_id"] == pid].iloc[0]
+        c_id = cluster_ids[i]
+        c_info = cluster_stats[c_id]
+        
         nodes.append({
             "id": pid,
-            "label": node_labels[i],
-            "cluster_id": int(cluster_ids[i]),
-            "risk_score": float(node_risk_scores[i]),
+            "label": c_info["label"],
+            "cluster_id": int(c_id),
+            "risk_score": float(c_info["risk_score"]),
             "attributes": {
                 "handle": node_row["handle"] or "unknown",
                 "trust_score": float(node_row["trust_score"]) if pd.notnull(node_row["trust_score"]) else 0.0,
@@ -403,6 +457,7 @@ def train_gae_pipeline(payload: dict) -> dict:
                 "post_count": int(node_row["total_posts"]) if pd.notnull(node_row["total_posts"]) else 0,
                 "picture_url": str(node_row["picture_url"]) if pd.notnull(node_row["picture_url"]) else None,
                 "owned_by": str(node_row["owned_by"]) if pd.notnull(node_row["owned_by"]) else None,
+                "reason": c_info["reasons"]
             }
         })
 
