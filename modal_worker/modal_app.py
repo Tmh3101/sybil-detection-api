@@ -209,21 +209,78 @@ def fetch_bigquery_data(start_date: str, end_date: str, max_nodes: int = 2000):
 def build_pyg_graph(df_nodes, df_edges):
     """
     Xây dựng đồ thị PyTorch Geometric (Full Feature Concatenation).
+    Refactored to prune isolated nodes before feature extraction.
     """
     import torch
     import numpy as np
     import pandas as pd
+    import itertools
     from sentence_transformers import SentenceTransformer
     from torch_geometric.data import Data
     from sklearn.preprocessing import MinMaxScaler
 
-    # 1. Đặc trưng văn bản (Semantic Text Embedding) - 384 chiều
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    # --- STEP 1: Reorder Edge Logic (Identify all potential edges) ---
+    edges_list = []
+    
+    # 1.1 Existing edges from BigQuery (Follow/Interact)
+    for _, row in df_edges.iterrows():
+        edges_list.append({
+            "source": row["source"], 
+            "target": row["target"], 
+            "type": row["type"], 
+            "weight": 2.0 if row["type"] == "FOLLOW" else 1.0
+        })
 
+    # 1.2 CO-OWNER edges (Logic Python)
+    df_owned = df_nodes[df_nodes["owned_by"].notnull()]
+    for _, group in df_owned.groupby("owned_by"):
+        if len(group) > 1:
+            pids = group["profile_id"].tolist()
+            for src, dst in itertools.combinations(pids, 2):
+                edges_list.append({"source": src, "target": dst, "type": "CO-OWNER", "weight": 5.0})
+
+    # 1.3 SIMILARITY edges (Close Creation Time)
+    df_nodes["created_dt"] = pd.to_datetime(df_nodes["created_on"])
+    df_sorted = df_nodes.sort_values("created_dt")
+    for i in range(len(df_sorted) - 1):
+        diff = (df_sorted.iloc[i+1]["created_dt"] - df_sorted.iloc[i]["created_dt"]).total_seconds()
+        if diff < 5:
+            edges_list.append({
+                "source": df_sorted.iloc[i]["profile_id"],
+                "target": df_sorted.iloc[i+1]["profile_id"],
+                "type": "SIMILARITY",
+                "weight": 3.0
+            })
+
+    # --- STEP 2: Identify Connected Nodes ---
+    connected_node_ids = set()
+    for e in edges_list:
+        connected_node_ids.add(e["source"])
+        connected_node_ids.add(e["target"])
+
+    # --- STEP 3: Prune DataFrame ---
+    # Keep only nodes that have at least one edge and are present in df_nodes
+    all_available_pids = set(df_nodes["profile_id"])
+    valid_connected_nodes = connected_node_ids.intersection(all_available_pids)
+    df_nodes_pruned = df_nodes[df_nodes["profile_id"].isin(valid_connected_nodes)].copy()
+
+    # --- STEP 4: Re-index node mapping based on pruned nodes ---
+    node_ids = df_nodes_pruned["profile_id"].tolist()
+    id_to_idx = {pid: i for i, pid in enumerate(node_ids)}
+
+    # --- STEP 5: Clean Edges: filter out edges that reference pruned nodes (safeguard) ---
+    edges_list = [e for e in edges_list if e["source"] in id_to_idx and e["target"] in id_to_idx]
+
+    # --- STEP 6: Optimized Feature Extraction (only on connected nodes) ---
+    if df_nodes_pruned.empty:
+        # Return empty data if no connected nodes found
+        return Data(x=torch.empty((0, 396)), edge_index=torch.empty((2, 0), dtype=torch.long)), [], []
+
+    model = SentenceTransformer("all-MiniLM-L6-v2")
     text_data = []
     onchain_features_raw = []
 
-    for _, row in df_nodes.iterrows():
+    for _, row in df_nodes_pruned.iterrows():
         # Text: Sử dụng cột 'bio' đã được parse sẵn từ fetch_bigquery_data
         bio = row["bio"] if (pd.notnull(row["bio"]) and row["bio"] != "") else ""
         handle = row["handle"] or "unknown"
@@ -246,7 +303,7 @@ def build_pyg_graph(df_nodes, df_edges):
             float(row["days_active"])
         ])
 
-    # Encode văn bản
+    # Encode văn bản (Expensive step)
     tensor_text = torch.tensor(model.encode(text_data), dtype=torch.float)
 
     # Chuẩn hóa On-chain features
@@ -257,40 +314,7 @@ def build_pyg_graph(df_nodes, df_edges):
     # NỐI ĐẶC TRƯNG: 384 (text) + 12 (on-chain) = 396 chiều
     x = torch.cat([tensor_text, tensor_onchain], dim=1)
 
-    # 2. Xây dựng ma trận cạnh
-    node_ids = df_nodes["profile_id"].tolist()
-    id_to_idx = {pid: i for i, pid in enumerate(node_ids)}
-
-    edges_list = []
-    # Thêm cạnh từ BigQuery (Follow/Interact)
-    for _, row in df_edges.iterrows():
-        src, dst = row["source"], row["target"]
-        if src in id_to_idx and dst in id_to_idx:
-            weight = 2.0 if row["type"] == "FOLLOW" else 1.0
-            edges_list.append({"source": src, "target": dst, "type": row["type"], "weight": weight})
-
-    # Thêm cạnh CO-OWNER (Logic Python)
-    df_owned = df_nodes[df_nodes["owned_by"].notnull()]
-    for owned_by, group in df_owned.groupby("owned_by"):
-        if len(group) > 1:
-            pids = group["profile_id"].tolist()
-            import itertools
-            for src, dst in itertools.combinations(pids, 2):
-                edges_list.append({"source": src, "target": dst, "type": "CO-OWNER", "weight": 5.0})
-
-    # Thêm cạnh SIMILARITY (Close Creation Time)
-    df_nodes["created_dt"] = pd.to_datetime(df_nodes["created_on"])
-    df_sorted = df_nodes.sort_values("created_dt")
-    for i in range(len(df_sorted) - 1):
-        diff = (df_sorted.iloc[i+1]["created_dt"] - df_sorted.iloc[i]["created_dt"]).total_seconds()
-        if diff < 5:
-            edges_list.append({
-                "source": df_sorted.iloc[i]["profile_id"],
-                "target": df_sorted.iloc[i+1]["profile_id"],
-                "type": "SIMILARITY",
-                "weight": 3.0
-            })
-
+    # --- STEP 7: Build PyG Data ---
     edge_sources = [id_to_idx[e["source"]] for e in edges_list]
     edge_targets = [id_to_idx[e["target"]] for e in edges_list]
     edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
