@@ -1,9 +1,9 @@
 # 🌐 Lens Protocol Sybil Detection API
 
-Python
-FastAPI
-Modal
-PyTorch
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Modal](https://img.shields.io/badge/Modal-Serverless-blue)](https://modal.com/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 
 A high-performance backend and serverless GPU worker suite for detecting Sybil account clusters in Web3 social graphs. This project features a dual-module architecture: **Module 1** for large-scale cluster discovery and **Module 2** for real-time, AI-powered profile inspection.
 
@@ -17,12 +17,9 @@ A high-performance backend and serverless GPU worker suite for detecting Sybil a
   - **Hybrid AI Training**: Employs **Graph Autoencoders (GAE)** with **GAT** layers for representation learning, followed by K-Means and heuristic pseudo-labeling.
 - **Module 2: Profile Inspector (Real-time)**
   - **Hybrid AI Inference**: Uses a 5-component pipeline (S-BERT + GAT + RF) to score profiles in sub-seconds.
-  - **Sync-to-Train Pipeline**: 100% feature consistency with training, including 12-stat numeric normalization and mandatory NLP syntax.
+  - **Sync-to-Train Pipeline**: 100% feature consistency with training, including 12-stat numeric normalization.
   - **Graph Backbone**: High-performance **NetworkX** cache in RAM for instantaneous ego-graph extraction.
   - **On-demand Fallback**: Automatically fetches and embeds missing nodes from Google BigQuery into the live Backbone.
-- **Scalable Infrastructure**
-  - **Serverless GPU**: Offloads heavy training and inference tasks to [Modal](https://modal.com/).
-  - **Data Provenance**: Integrated with Google BigQuery for direct access to Lens Protocol mainnet data.
 
 ---
 
@@ -89,6 +86,101 @@ graph TD
 
 ---
 
+## 📡 API Documentation
+
+### 🛰️ Module 1: Cluster Discovery (Batch)
+
+#### 1. Start Discovery Job
+`POST /api/v1/sybil/discovery/start`
+
+Initiates an asynchronous GAE pipeline on Modal GPU.
+
+**Request Attributes:**
+
+| Attribute | Type | Required | Default | Description |
+| :--- | :--- | :---: | :--- | :--- |
+| `time_range` | `object` | Yes | - | Time window for graph reconstruction. |
+| `time_range.start_date` | `string` | Yes | - | Start date in `YYYY-MM-DD` format. |
+| `time_range.end_date` | `string` | Yes | - | End date in `YYYY-MM-DD` format. |
+| `max_nodes` | `integer` | No | `2000` | Maximum nodes to fetch from BigQuery. |
+| `hyperparameters` | `object` | No | `null` | Training parameters for the GAE model. |
+| `hyperparameters.max_epochs` | `integer` | No | `400` | Maximum training epochs. |
+| `hyperparameters.patience` | `integer` | No | `30` | Early stopping patience. |
+| `hyperparameters.learning_rate`| `float` | No | `0.005`| Model learning rate. |
+
+**Success Response Attributes (200 OK):**
+
+| Attribute | Type | Description |
+| :--- | :--- | :--- |
+| `task_id` | `string` | Unique identifier for the discovery job. |
+| `status` | `enum` | `PROCESSING`, `COMPLETED`, or `FAILED`. |
+| `progress` | `integer` | Completion percentage (0-100). |
+| `current_step` | `string` | Human-readable description of current task. |
+| `message` | `string` | Optional status or error message. |
+
+#### 2. Poll Discovery Status
+`GET /api/v1/sybil/discovery/status/{task_id}`
+
+Retrieves job status and labeled graph data upon completion.
+
+**Response Attributes (200 OK):**
+
+| Attribute | Type | Description |
+| :--- | :--- | :--- |
+| `task_id` | `string` | Unique identifier for the discovery job. |
+| `status` | `enum` | `PROCESSING`, `COMPLETED`, or `FAILED`. |
+| `graph_data` | `object` | Labeled graph data (if `status` == `COMPLETED`). |
+| `graph_data.nodes` | `array` | List of `Node` objects. |
+| `graph_data.links` | `array` | List of `Link` objects. |
+| `graph_data.cluster_count` | `integer` | Total number of clusters identified. |
+
+**Node Object:**
+
+| Attribute | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `string` | Lens Profile ID. |
+| `label` | `string` | Risk classification (e.g., `2_HIGH_RISK`, `0_BENIGN`). |
+| `cluster_id` | `integer` | ID of the cluster the node belongs to. |
+| `risk_score` | `float` | Calculated risk probability (0.0 - 1.0). |
+| `attributes` | `object` | Metadata (handle, trust_score, owned_by, reason). |
+
+**Link Object:**
+
+| Attribute | Type | Description |
+| :--- | :--- | :--- |
+| `source` | `string` | Source node ID. |
+| `target` | `string` | Target node ID. |
+| `edge_type` | `string` | Interaction type (e.g., `FOLLOW`, `COLLECT`). |
+| `weight` | `float` | Edge weight strength. |
+
+---
+
+### 🔍 Module 2: Profile Inspector (Real-time)
+
+#### 1. Analyze Profile
+`GET /api/v1/inspector/profile/{profile_id}`
+
+Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
+
+**Response Attributes (200 OK):**
+
+| Attribute | Type | Description |
+| :--- | :--- | :--- |
+| `profile_info` | `object` | Basic profile metadata. |
+| `profile_info.id` | `string` | Lens Profile ID. |
+| `profile_info.handle` | `string` | Lens handle. |
+| `profile_info.picture_url`| `string` | URL to profile picture. |
+| `profile_info.owned_by` | `string` | Owner wallet address. |
+| `analysis` | `object` | AI inference results. |
+| `analysis.sybil_probability`| `float` | Risk score (0.0 to 1.0). |
+| `analysis.classification` | `string` | Final risk level classification. |
+| `analysis.reasoning` | `array` | Human-readable explanation strings. |
+| `local_graph` | `object` | Ego-graph (radius=1) direct connections. |
+| `local_graph.nodes` | `array` | List of connected profiles with attributes. |
+| `local_graph.links` | `array` | List of interaction edges. |
+
+---
+
 ## 🧠 Hybrid AI Pipeline (Inference)
 
 To ensure maximum accuracy, the inference engine follows a strict stage process identical to the training environment:
@@ -98,18 +190,6 @@ To ensure maximum accuracy, the inference engine follows a strict stage process 
 3. **Graph Attention (GAT)**: A pre-trained GAT model processes the local ego-graph to extract a 16D structural embedding.
 4. **Ensemble Classification**: A **Random Forest** model performs the final classification into four risk levels: `BENIGN`, `LOW_RISK`, `MEDIUM_RISK`, and `HIGH_RISK`.
 5. **Reasoning Engine**: Scans direct graph connections (e.g., `CO-OWNER`, `SIM_BIO`) to generate human-readable explanations.
-
----
-
-## 🛠️ Tech Stack
-
-- **Backend**: FastAPI, Pydantic v2, NetworkX.
-- **Data & ML**:
-  - `torch` & `torch-geometric` (GAT, GAE).
-  - `sentence-transformers` (NLP Embeddings).
-  - `scikit-learn` & `joblib` (Random Forest & Scalers).
-  - `pandas` & `numpy` (Data processing).
-- **Infrastructure**: Modal (Serverless GPU), Google BigQuery.
 
 ---
 
@@ -146,156 +226,6 @@ modal deploy modal_worker/modal_app.py
 
 ```bash
 uvicorn app.main:app --reload
-```
-
----
-
-## 📡 API Documentation
-
-### 🛰️ Module 1: Cluster Discovery (Batch)
-
-#### 1. Start Discovery Job
-
-`POST /api/v1/sybil/discovery/start`
-
-Initiates an asynchronous GAE pipeline on Modal GPU.
-
-**Request Body:**
-
-```json
-{
-  "time_range": {
-    "start_date": "2025-12-01",
-    "end_date": "2025-12-07"
-  },
-  "max_nodes": 2000,
-  "hyperparameters": {
-    "max_epochs": 400,
-    "patience": 30,
-    "learning_rate": 0.005
-  }
-}
-```
-
-**Success Response (200 OK):**
-
-```json
-{
-  "task_id": "fc-1234ABCD",
-  "status": "PROCESSING",
-  "progress": 0,
-  "current_step": "QUEUED",
-  "graph_data": null,
-  "message": null
-}
-```
-
-#### 2. Poll Discovery Status
-
-`GET /api/v1/sybil/discovery/status/{task_id}`
-
-Retrieves job status and labeled graph data upon completion.
-
-**Success Response (200 OK):**
-
-```json
-{
-  "task_id": "fc-1234ABCD",
-  "status": "COMPLETED",
-  "progress": 100,
-  "current_step": "FINALIZE_GRAPH",
-  "graph_data": {
-    "nodes": [
-      {
-        "id": "node-1",
-        "label": "2_HIGH_RISK",
-        "cluster_id": 0,
-        "risk_score": 0.85,
-        "attributes": {
-          "handle": "risky_user.lens",
-          "trust_score": 5.2,
-          "follower_count": 10,
-          "owned_by": "0x123...",
-          "reason": "Low Trust Score; High Co-owner relationship"
-        }
-      },
-      {
-        "id": "node-2",
-        "label": "0_BENIGN",
-        "cluster_id": 0,
-        "risk_score": 0.05,
-        "attributes": {
-          "handle": "good_user.lens",
-          "trust_score": 9.8,
-          "follower_count": 500,
-          "owned_by": "0x456...",
-          "reason": "None"
-        }
-      }
-    ],
-    "links": [
-      {
-        "source": "node-1",
-        "target": "node-2",
-        "edge_type": "FOLLOW",
-        "weight": 2.0
-      }
-    ]
-  },
-  "message": null
-}
-```
-
----
-
-### 🔍 Module 2: Profile Inspector (Real-time)
-
-#### 1. Analyze Profile
-
-`GET /api/v1/inspector/profile/{profile_id}`
-
-Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
-
-**Success Response (200 OK):**
-
-```json
-{
-  "profile_info": {
-    "id": "0x123...",
-    "handle": "vitalik.lens",
-    "picture_url": "https://...",
-    "owned_by": "0x..."
-  },
-  "analysis": {
-    "sybil_probability": 0.05,
-    "classification": "BENIGN",
-    "reasoning": [
-      "No significant Sybil patterns detected. Account behavior appears consistent with organic users."
-    ]
-  },
-  "local_graph": {
-    "nodes": [
-      {
-        "id": "0x123...",
-        "attributes": {
-          "handle": "vitalik.lens",
-          "trust_score": 95.5,
-          "picture_url": "https://...",
-          "owned_by": "0x...",
-          "created_on": "2021-05-15"
-        }
-      }
-    ],
-    "links": [
-      {
-        "source": "0x123...",
-        "target": "0x456...",
-        "edge_type": "FOLLOW",
-        "weight": 2.0
-      }
-    ]
-  }
-}
 ```
 
 ---
