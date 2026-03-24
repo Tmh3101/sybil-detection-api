@@ -14,15 +14,15 @@ logger = logging.getLogger(__name__)
 LABEL_MAP = {
     0: "BENIGN",
     1: "LOW_RISK",
-    2: "MEDIUM_RISK",
-    3: "HIGH_RISK"
+    2: "HIGH_RISK",
+    3: "MALICIOUS"
 }
 
 RISK_LEVELS = {
     0: "Clean / Genuine",
     1: "Low Risk / Possible Automation",
-    2: "Medium Risk / Suspicious Relationships",
-    3: "High Risk / Sybil Cluster Detected"
+    2: "High Risk / Suspicious Relationships",
+    3: "Malicious / Sybil Cluster Detected"
 }
 
 async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: str):
