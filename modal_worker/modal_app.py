@@ -148,17 +148,29 @@ def fetch_bigquery_data(start_date: str, end_date: str):
 
     def parse_metadata(meta_str):
         if pd.isna(meta_str) or not meta_str:
-            return pd.Series(["", ""])
+            return ("", "") # Trả về tuple thay vì pd.Series
         try:
             # Đảm bảo parse chuỗi an toàn
             meta = ast.literal_eval(str(meta_str)).get('lens', {})
-            return pd.Series([meta.get('bio', '') or "", meta.get('picture', '') or ""])
+            return (meta.get('bio', '') or "", meta.get('picture', '') or "")
         except:
-            return pd.Series(["", ""])
+            return ("", "")
+        
+    print(df_nodes.head())
 
-    # Apply hàm lên dataframe
-    if "raw_metadata" in df_nodes.columns:
-        df_nodes[['bio', 'picture_url']] = df_nodes['raw_metadata'].apply(parse_metadata)
+    # Bắt buộc check DataFrame rỗng trước khi xử lý cột
+    if df_nodes.empty:
+        df_nodes['bio'] = ""
+        df_nodes['picture_url'] = ""
+        df_nodes['has_avatar'] = 0
+    elif "raw_metadata" in df_nodes.columns:
+        # Parse data thành list các tuples
+        parsed_data = df_nodes['raw_metadata'].apply(parse_metadata)
+        
+        # Tách an toàn vào từng cột
+        df_nodes['bio'] = [x[0] for x in parsed_data]
+        df_nodes['picture_url'] = [x[1] for x in parsed_data]
+        
         # Cập nhật lại cột has_avatar dựa trên picture_url
         df_nodes['has_avatar'] = df_nodes['picture_url'].apply(lambda x: 1 if (x and x != "") else 0)
     else:
