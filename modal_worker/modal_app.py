@@ -82,6 +82,10 @@ def fetch_bigquery_data(start_date: str, end_date: str):
         ANY_VALUE(ps.total_comments) as total_comments,
         ANY_VALUE(ps.total_reposts) as total_mirrors,
         ANY_VALUE(ps.total_collects) as total_collects,
+        ANY_VALUE(ps.total_tips) as total_tips,
+        ANY_VALUE(ps.total_quotes) as total_quotes,
+        ANY_VALUE(ps.total_reacted) as total_reacted,
+        ANY_VALUE(ps.total_reactions) as total_reactions,
         ANY_VALUE(fs.total_followers) as total_followers,
         ANY_VALUE(fs.total_following) as total_following
     FROM `lens-protocol-mainnet.account.metadata` as meta
@@ -143,6 +147,12 @@ def fetch_bigquery_data(start_date: str, end_date: str):
 
     df_edges = pd.concat([df_edges_follow, df_edges_interact], ignore_index=True)
 
+    # Calculate days_active
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    df_nodes['created_on'] = pd.to_datetime(df_nodes['created_on'], utc=True)
+    df_nodes['days_active'] = (now - df_nodes['created_on']).dt.days.fillna(0).astype(float)
+
     # Tích hợp hàm parse_metadata
     import ast
 
@@ -180,7 +190,11 @@ def fetch_bigquery_data(start_date: str, end_date: str):
         df_nodes['has_avatar'] = 0
 
     # Xử lý các giá trị null trong node features
-    cols_to_fix = ['total_posts', 'total_comments', 'total_mirrors', 'total_collects', 'total_followers', 'total_following']
+    cols_to_fix = [
+        'total_posts', 'total_comments', 'total_mirrors', 'total_collects', 
+        'total_followers', 'total_following', 'total_tips', 'total_quotes', 
+        'total_reacted', 'total_reactions', 'trust_score'
+    ]
     df_nodes[cols_to_fix] = df_nodes[cols_to_fix].fillna(0)
 
     return df_nodes, df_edges
@@ -210,15 +224,20 @@ def build_pyg_graph(df_nodes, df_edges):
         name = row["display_name"] or "unknown"
         text_data.append(f"Handle: {handle}. Name: {name}. Bio: {bio}")
 
-        # On-chain raw: Sử dụng cột 'has_avatar' đã được tính toán sẵn
+        # On-chain raw: 12 features in specific order (matching research pipeline)
         onchain_features_raw.append([
-            float(row["has_avatar"]),
+            float(row["trust_score"]),
+            float(row["total_tips"]),
+            float(row["total_posts"]),
+            float(row["total_quotes"]),
+            float(row["total_reacted"]),
+            float(row["total_reactions"]),
+            float(row["total_mirrors"]),
+            float(row["total_collects"]),
+            float(row["total_comments"]),
             float(row["total_followers"]),
             float(row["total_following"]),
-            float(row["total_posts"]),
-            float(row["total_comments"]),
-            float(row["total_mirrors"]),
-            float(row["total_collects"])
+            float(row["days_active"])
         ])
 
     # Encode văn bản
@@ -229,7 +248,7 @@ def build_pyg_graph(df_nodes, df_edges):
     onchain_scaled = scaler.fit_transform(np.array(onchain_features_raw))
     tensor_onchain = torch.tensor(onchain_scaled, dtype=torch.float)
 
-    # NỐI ĐẶC TRƯNG: 384 (text) + 7 (on-chain) = 391 chiều
+    # NỐI ĐẶC TRƯNG: 384 (text) + 12 (on-chain) = 396 chiều
     x = torch.cat([tensor_text, tensor_onchain], dim=1)
 
     # 2. Xây dựng ma trận cạnh
