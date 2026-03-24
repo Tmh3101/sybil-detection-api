@@ -352,42 +352,51 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
 
         logger.info(f"[LOGICAL EDGES SUMMARY] CO-OWNER: {co_owner_count}, SAME_AVATAR: {same_avatar_count}, FUZZY_HANDLE: {fuzzy_handle_count}, CLOSE_CREATION_TIME: {close_time_count}")
 
-        # 3.5 SIMILARITY edges (NLP Bio)
-        if new_bio and len(new_bio.strip()) > 5:
+        # 3.5 SIMILARITY edges (NLP Bio) - Optimized with Pre-computed Embeddings
+        if new_bio and isinstance(new_bio, str) and len(new_bio.strip()) > 5:
             model = get_sentence_model()
             if model:
                 try:
                     from sentence_transformers import util
                     logger.info(f"[SIM_BIO CHECK] Bio của node mới: '{new_bio[:50]}...'")
                     
-                    # Global Search: Compare against all nodes currently in the RAM graph
-                    neighbors_to_check = [n for n in G.nodes() if n != node_data["profile_id"]]
-                    valid_neighbors = []
-                    neighbor_bios = []
-                    for n_id in neighbors_to_check:
-                        n_bio = G.nodes[n_id].get("bio")
-                        if n_bio and isinstance(n_bio, str) and len(n_bio.strip()) > 5:
-                            valid_neighbors.append(n_id)
-                            neighbor_bios.append(n_bio)
+                    # 1. Encode ONLY the new user's bio ONCE
+                    new_bio_tensor = model.encode([new_bio], convert_to_tensor=True)
                     
+                    # 2. Gather existing embeddings from RAM graph
+                    valid_neighbors = []
+                    existing_embs = []
+                    
+                    for n_id, attrs in G.nodes(data=True):
+                        if n_id == node_data["profile_id"]:
+                            continue
+                        
+                        cached_emb = attrs.get("bio_embedding")
+                        if cached_emb is not None:
+                            valid_neighbors.append(n_id)
+                            existing_embs.append(cached_emb)
+                    
+                    # 3. Compute scores using matrix multiplication if we have neighbors
                     if valid_neighbors:
-                        embeddings1 = model.encode([new_bio], convert_to_tensor=True)
-                        logger.info(f"3. Embedding: Bio NLP vector shape = {embeddings1.shape} (Expected: [1, 384])")
-                        embeddings2 = model.encode(neighbor_bios, convert_to_tensor=True)
-                        cosine_scores = util.cos_sim(embeddings1, embeddings2)[0]
+                        # Stack all cached embeddings into a single [N, 384] tensor
+                        existing_matrix = torch.stack(existing_embs)
+                        
+                        # Compute cosine similarity for all neighbors at once
+                        cosine_scores = util.cos_sim(new_bio_tensor, existing_matrix)[0]
                         
                         sim_count = 0
-                        for i, n_id in enumerate(valid_neighbors):
-                            score = cosine_scores[i].item()
-                            if score >= 0.8:
-                                G.add_edge(node_data["profile_id"], n_id, type="SIM_BIO", weight=EDGE_WEIGHTS["SIM_BIO"])
-                                G.add_edge(n_id, node_data["profile_id"], type="SIM_BIO", weight=EDGE_WEIGHTS["SIM_BIO"])
+                        for idx, score in enumerate(cosine_scores):
+                            if score.item() >= 0.85:
+                                target_pid = valid_neighbors[idx]
+                                G.add_edge(node_data["profile_id"], target_pid, type="SIM_BIO", weight=EDGE_WEIGHTS["SIM_BIO"])
+                                G.add_edge(target_pid, node_data["profile_id"], type="SIM_BIO", weight=EDGE_WEIGHTS["SIM_BIO"])
                                 sim_count += 1
-                                logger.info(f"   -> [SIM_BIO] Nối với {n_id} (Score: {score:.4f})")
+                                # logger.info(f"   -> [SIM_BIO] Nối với {target_pid} (Score: {score.item():.4f})")
+                        
                         if sim_count > 0:
-                            logger.info(f"Added {sim_count} SIM_BIO edges.")
+                            logger.info(f"Added {sim_count} optimized SIM_BIO edges.")
                 except Exception as e:
-                    logger.error(f"Error computing SIM_BIO for {profile_id}: {e}")
+                    logger.error(f"Error computing optimized SIM_BIO for {profile_id}: {e}")
             
         # --- [EDGES VERIFICATION] ---
         try:

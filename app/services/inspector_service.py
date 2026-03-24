@@ -22,15 +22,26 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
         return nx.MultiDiGraph()
 
     try:
+        # Resolve path for pre-computed bio embeddings
+        emb_path = os.path.join(os.path.dirname(pt_path), "bio_embeddings.pt")
+
         # Load data in a separate thread to avoid blocking the event loop
         def sync_load():
             # Using weights_only=False because PyG Data objects are often complex pickles
             # and map_location='cpu' as instructed.
             data = torch.load(pt_path, map_location="cpu", weights_only=False)
             df_meta = pd.read_csv(meta_path)
-            return data, df_meta
+            
+            bio_embs = {}
+            if os.path.exists(emb_path):
+                logger.info(f"Loading pre-computed bio embeddings from {emb_path}...")
+                bio_embs = torch.load(emb_path, map_location="cpu", weights_only=False)
+            else:
+                logger.warning(f"Bio embeddings file not found at {emb_path}. Proceeding without it.")
 
-        data, df_meta = await asyncio.to_thread(sync_load)
+            return data, df_meta, bio_embs
+
+        data, df_meta, bio_embs = await asyncio.to_thread(sync_load)
 
         # Basic validation
         num_nodes_pt = data.num_nodes if hasattr(data, 'num_nodes') else data.x.size(0)
@@ -45,13 +56,15 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
         # Using profile_id as the node key
         logger.info(f"Adding {len(df_meta)} nodes to Backbone...")
         for _, row in df_meta.iterrows():
+            profile_id = str(row["profile_id"])
             G.add_node(
-                str(row["profile_id"]),
+                profile_id,
                 handle=row.get("handle"),
                 display_name=row.get("display_name"),
                 picture_url=row.get("picture_url"),
                 owned_by=row.get("owned_by"),
                 bio=row.get("bio", ""),
+                bio_embedding=bio_embs.get(profile_id, None),
                 created_on=row.get("created_on"),
                 trust_score=row.get("trust_score", 0),
                 total_tips=row.get("total_tips", 0),
