@@ -138,7 +138,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             # Use weight from data if present, else lookup from EDGE_WEIGHTS
             weight = data.get("weight")
             if weight is None:
-                e_type = data.get("type", "MENTION")
+                e_type = data.get("type", "UNKNOWN")
                 weight = EDGE_WEIGHTS.get(e_type, 1.0)
             
             weights.append(float(weight))
@@ -187,7 +187,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     for u, v, data in subgraph.edges(data=True):
         if u == target_id or v == target_id:
             e_type = data.get("type", "")
-            if e_type in ["CO-OWNER", "SIM_BIO", "SAME_AVATAR", "FUZZY_HANDLE", "COLLECT"]:
+            if e_type in ["CO-OWNER", "SIM_BIO", "SAME_AVATAR", "FUZZY_HANDLE"]:
                 risk_edges.append(e_type)
     
     # Use confidence (highest prob) for reasoning display

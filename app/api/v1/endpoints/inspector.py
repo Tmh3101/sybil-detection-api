@@ -96,6 +96,7 @@ async def get_profile_details(profile_id: str, request: Request):
                     "handle": attrs.get("handle", "unknown"),
                     "trust_score": float(attrs.get("trust_score", 0.0)),
                     "follower_count": int(attrs.get("total_followers", 0)),
+                    "following_count": int(attrs.get("total_following", 0)),
                     "post_count": int(attrs.get("total_posts", 0)),
                     "picture_url": attrs.get("picture_url", ""),
                     "owned_by": attrs.get("owned_by", ""),
@@ -108,7 +109,7 @@ async def get_profile_details(profile_id: str, request: Request):
             links.append(LocalGraphLink(
                 source=u,
                 target=v,
-                edge_type=data.get("type", "INTERACT"),
+                edge_type=data.get("type", "UNKNOWN"),
                 weight=float(data.get("weight", 1.0))
             ))
             
