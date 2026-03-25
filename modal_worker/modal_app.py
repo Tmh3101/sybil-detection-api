@@ -363,11 +363,11 @@ def train_gae_pipeline(payload: dict) -> dict:
     end_date = time_range.get("end_date", "2025-12-07 00:00:00")
 
     # Hyperparameters from payload
-    max_nodes = max(100, min(payload.get("max_nodes", 2000), 10000))
+    max_nodes = max(100, min(payload.get("max_nodes", 2000), 5000))
     hp = payload.get("hyperparameters") or {}
     max_epochs = max(50, min(hp.get("max_epochs", 400), 1000))
     patience = max(10, min(hp.get("patience", 30), 100))
-    learning_rate = max(0.0001, min(hp.get("learning_rate", 0.005), 0.1))
+    learning_rate = max(0.0001, min(hp.get("learning_rate", 0.005), 0.01))
 
     # 2) Fetch Data (Respecting max_nodes)
     df_nodes, df_edges = fetch_bigquery_data(start_date, end_date, max_nodes=max_nodes)
@@ -480,22 +480,22 @@ def train_gae_pipeline(payload: dict) -> dict:
         
         if pct_co_owner > 0.1:
             score += 50
-            reasons.append("High Co-owner relationship")
+            reasons.append(f"High Co-owner relationship ({pct_co_owner * 100:.2f}%) +50")
         if size > 2 and pct_similarity >= 0.6:
             score += 30
-            reasons.append("High Similarity (Creation Time)")
+            reasons.append(f"High Similarity relationship ({pct_similarity * 100:.2f}%) +30")
         if size > 1 and std_creation_hours < 0.5:
             score += 15
-            reasons.append("Batch Creation detected")
+            reasons.append(f"Batch Creation detected (std: {std_creation_hours:.6f}) +15")
         if pct_social <= 0.2:
             score += 10
-            reasons.append("Low Social interaction")
+            reasons.append(f"Low Social interaction ({pct_social * 100:.2f}%) +10")
         if avg_trust <= 5:
             score += 20
-            reasons.append("Very Low Trust Score")
+            reasons.append(f"Very Low Trust Score (avg: {avg_trust:.2f}) +20")
         elif avg_trust <= 8:
             score += 10
-            reasons.append("Low Trust Score")
+            reasons.append(f"Low Trust Score (avg: {avg_trust:.2f}) +10")
             
         score = min(100, score)
         risk_score = score / 100.0
@@ -509,7 +509,7 @@ def train_gae_pipeline(payload: dict) -> dict:
         cluster_stats[c_id] = {
             "label": sanitize_label(label),
             "risk_score": risk_score,
-            "reasons": "; ".join(reasons) if reasons else "None"
+            "reasons": reasons
         }
 
     # 6) Format
@@ -545,9 +545,13 @@ def train_gae_pipeline(payload: dict) -> dict:
         })
 
     return {
+        "cluster_count": int(n_clusters),
+        "num_nodes": len(nodes),
+        "num_edges": len(links),
         "nodes": nodes,
         "links": links,
-        "cluster_count": int(n_clusters)
+        "start_date": start_date,
+        "end_date": end_date
     }
 
 @app.function(
