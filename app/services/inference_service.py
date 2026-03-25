@@ -18,13 +18,6 @@ LABEL_MAP = {
     3: "MALICIOUS"
 }
 
-RISK_LEVELS = {
-    0: "Clean / Genuine",
-    1: "Low Risk / Possible Automation",
-    2: "High Risk / Suspicious Relationships",
-    3: "Malicious / Sybil Cluster Detected"
-}
-
 async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: str):
     """
     Perform Hybrid AI inference on a given ego-graph.
@@ -204,8 +197,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     return {
         "predict_label": predict_label,
         "predict_proba": predict_proba,
-        "reasoning": reasoning,
-        "risk_level": RISK_LEVELS.get(rf_pred_class, "Unknown")
+        "reasoning": reasoning
     }
 
 def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> list:
