@@ -15,7 +15,7 @@ except ModuleNotFoundError:  # pragma: no cover
 class SybilService:
     """Business logic layer for sybil discovery."""
     def __init__(self):
-        self.setting = get_settings()
+        self.settings = get_settings()
 
     async def start_discovery(self, req: DiscoveryRequest) -> dict:
         """
