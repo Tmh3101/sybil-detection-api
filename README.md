@@ -91,93 +91,96 @@ graph TD
 ### 🛰️ Module 1: Cluster Discovery (Batch)
 
 #### 1. Start Discovery Job
+
 `POST /api/v1/sybil/discovery/start`
 
 Initiates an asynchronous GAE pipeline on Modal GPU.
 
 **Request Attributes:**
 
-| Attribute | Type | Required | Default | Description |
-| :--- | :--- | :---: | :--- | :--- |
-| `time_range` | `object` | Yes | - | Time window for graph reconstruction. |
-| `time_range.start_date` | `string` | Yes | - | Start date in `YYYY-MM-DD` format. |
-| `time_range.end_date` | `string` | Yes | - | End date in `YYYY-MM-DD` format. |
-| `max_nodes` | `integer` | No | `2000` | Maximum nodes to fetch from BigQuery. |
-| `hyperparameters` | `object` | No | `null` | Training parameters for the GAE model. |
-| `hyperparameters.max_epochs` | `integer` | No | `400` | Maximum training epochs. |
-| `hyperparameters.patience` | `integer` | No | `30` | Early stopping patience. |
-| `hyperparameters.learning_rate`| `float` | No | `0.005`| Model learning rate. |
+| Attribute                       | Type      | Required | Default | Description                            |
+| :------------------------------ | :-------- | :------: | :------ | :------------------------------------- |
+| `time_range`                    | `object`  |   Yes    | -       | Time window for graph reconstruction.  |
+| `time_range.start_date`         | `string`  |   Yes    | -       | Start date in `YYYY-MM-DD` format.     |
+| `time_range.end_date`           | `string`  |   Yes    | -       | End date in `YYYY-MM-DD` format.       |
+| `max_nodes`                     | `integer` |    No    | `2000`  | Maximum nodes to fetch from BigQuery.  |
+| `hyperparameters`               | `object`  |    No    | `null`  | Training parameters for the GAE model. |
+| `hyperparameters.max_epochs`    | `integer` |    No    | `400`   | Maximum training epochs.               |
+| `hyperparameters.patience`      | `integer` |    No    | `30`    | Early stopping patience.               |
+| `hyperparameters.learning_rate` | `float`   |    No    | `0.005` | Model learning rate.                   |
 
 **Success Response Attributes (200 OK):**
 
-| Attribute | Type | Description |
-| :--- | :--- | :--- |
-| `task_id` | `string` | Unique identifier for the discovery job. |
-| `status` | `enum` | `PROCESSING`, `COMPLETED`, or `FAILED`. |
-| `progress` | `integer` | Completion percentage (0-100). |
-| `current_step` | `string` | Human-readable description of current task. |
-| `message` | `string` | Optional status or error message. |
+| Attribute      | Type      | Description                                 |
+| :------------- | :-------- | :------------------------------------------ |
+| `task_id`      | `string`  | Unique identifier for the discovery job.    |
+| `status`       | `enum`    | `PROCESSING`, `COMPLETED`, or `FAILED`.     |
+| `progress`     | `integer` | Completion percentage (0-100).              |
+| `current_step` | `string`  | Human-readable description of current task. |
+| `message`      | `string`  | Optional status or error message.           |
 
 #### 2. Poll Discovery Status
+
 `GET /api/v1/sybil/discovery/status/{task_id}`
 
 Retrieves job status and labeled graph data upon completion.
 
 **Response Attributes (200 OK):**
 
-| Attribute | Type | Description |
-| :--- | :--- | :--- |
-| `task_id` | `string` | Unique identifier for the discovery job. |
-| `status` | `enum` | `PROCESSING`, `COMPLETED`, or `FAILED`. |
-| `graph_data` | `object` | Labeled graph data (if `status` == `COMPLETED`). |
-| `graph_data.nodes` | `array` | List of `Node` objects. |
-| `graph_data.links` | `array` | List of `Link` objects. |
-| `graph_data.cluster_count` | `integer` | Total number of clusters identified. |
+| Attribute                  | Type      | Description                                      |
+| :------------------------- | :-------- | :----------------------------------------------- |
+| `task_id`                  | `string`  | Unique identifier for the discovery job.         |
+| `status`                   | `enum`    | `PROCESSING`, `COMPLETED`, or `FAILED`.          |
+| `graph_data`               | `object`  | Labeled graph data (if `status` == `COMPLETED`). |
+| `graph_data.nodes`         | `array`   | List of `Node` objects.                          |
+| `graph_data.links`         | `array`   | List of `Link` objects.                          |
+| `graph_data.cluster_count` | `integer` | Total number of clusters identified.             |
 
-**Node Object:**
+**Node Object (Golden Schema):**
 
-| Attribute | Type | Description |
-| :--- | :--- | :--- |
-| `id` | `string` | Lens Profile ID. |
-| `label` | `string` | Risk classification (e.g., `2_HIGH_RISK`, `0_BENIGN`). |
-| `cluster_id` | `integer` | ID of the cluster the node belongs to. |
-| `risk_score` | `float` | Calculated risk probability (0.0 - 1.0). |
-| `attributes` | `object` | Metadata (handle, trust_score, owned_by, reason). |
+| Attribute    | Type      | Description                                                                   |
+| :----------- | :-------- | :---------------------------------------------------------------------------- |
+| `id`         | `string`  | Lens Profile ID.                                                              |
+| `risk_label` | `string`  | Sanitized classification (e.g., `HIGH_RISK`, `BENIGN`).                       |
+| `cluster_id` | `integer` | ID of the cluster the node belongs to.                                        |
+| `risk_score` | `float`   | Calculated risk probability (0.0 - 1.0).                                      |
+| `attributes` | `object`  | Metadata (handle, trust_score, follower_count, post_count, owned_by, reason). |
 
 **Link Object:**
 
-| Attribute | Type | Description |
-| :--- | :--- | :--- |
-| `source` | `string` | Source node ID. |
-| `target` | `string` | Target node ID. |
+| Attribute   | Type     | Description                                   |
+| :---------- | :------- | :-------------------------------------------- |
+| `source`    | `string` | Source node ID.                               |
+| `target`    | `string` | Target node ID.                               |
 | `edge_type` | `string` | Interaction type (e.g., `FOLLOW`, `COLLECT`). |
-| `weight` | `float` | Edge weight strength. |
+| `weight`    | `float`  | Edge weight strength.                         |
 
 ---
 
 ### 🔍 Module 2: Profile Inspector (Real-time)
 
 #### 1. Analyze Profile
+
 `GET /api/v1/inspector/profile/{profile_id}`
 
 Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
 
 **Response Attributes (200 OK):**
 
-| Attribute | Type | Description |
-| :--- | :--- | :--- |
-| `profile_info` | `object` | Basic profile metadata. |
-| `profile_info.id` | `string` | Lens Profile ID. |
-| `profile_info.handle` | `string` | Lens handle. |
-| `profile_info.picture_url`| `string` | URL to profile picture. |
-| `profile_info.owned_by` | `string` | Owner wallet address. |
-| `analysis` | `object` | AI inference results. |
-| `analysis.sybil_probability`| `float` | Risk score (0.0 to 1.0). |
-| `analysis.classification` | `string` | Final risk level classification. |
-| `analysis.reasoning` | `array` | Human-readable explanation strings. |
-| `local_graph` | `object` | Ego-graph (radius=1) direct connections. |
-| `local_graph.nodes` | `array` | List of connected profiles with attributes. |
-| `local_graph.links` | `array` | List of interaction edges. |
+| Attribute                    | Type     | Description                                           |
+| :--------------------------- | :------- | :---------------------------------------------------- |
+| `profile_info`               | `object` | Basic profile metadata.                               |
+| `profile_info.id`            | `string` | Lens Profile ID.                                      |
+| `profile_info.handle`        | `string` | Lens handle.                                          |
+| `profile_info.picture_url`   | `string` | URL to profile picture.                               |
+| `profile_info.owned_by`      | `string` | Owner wallet address.                                 |
+| `analysis`                   | `object` | AI inference results.                                 |
+| `analysis.sybil_probability` | `float`  | Risk score (0.0 to 1.0).                              |
+| `analysis.risk_label`        | `string` | Sanitized risk level classification (e.g., `BENIGN`). |
+| `analysis.reasoning`         | `array`  | Human-readable explanation strings.                   |
+| `local_graph`                | `object` | Ego-graph (radius=1) with unified node schema.        |
+| `local_graph.nodes`          | `array`  | List of connected profiles (Matching Golden Schema).  |
+| `local_graph.links`          | `array`  | List of interaction edges (`edge_type`).              |
 
 ---
 

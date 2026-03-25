@@ -39,6 +39,13 @@ app = modal.App(
 )
 
 
+def sanitize_label(label: str) -> str:
+    """Strip numeric prefix from risk label (e.g., '0_BENIGN' -> 'BENIGN')."""
+    if "_" in label and label[0].isdigit():
+        return label.split("_", 1)[1]
+    return label
+
+
 def fetch_bigquery_data(start_date: str, end_date: str, max_nodes: int = 2000):
     """
     Truy xuất dữ liệu đầy đủ từ Lens Protocol trên BigQuery (Tham khảo build_datasets.py).
@@ -500,7 +507,7 @@ def train_gae_pipeline(payload: dict) -> dict:
         else: label = "3_MALICIOUS"
         
         cluster_stats[c_id] = {
-            "label": label,
+            "label": sanitize_label(label),
             "risk_score": risk_score,
             "reasons": "; ".join(reasons) if reasons else "None"
         }
@@ -514,7 +521,7 @@ def train_gae_pipeline(payload: dict) -> dict:
         
         nodes.append({
             "id": pid,
-            "label": c_info["label"],
+            "risk_label": c_info["label"],
             "cluster_id": int(c_id),
             "risk_score": float(c_info["risk_score"]),
             "attributes": {

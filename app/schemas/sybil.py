@@ -24,7 +24,7 @@ class DiscoveryRequest(BaseModel):
 
 class NodeSchema(BaseModel):
     id: str
-    label: str
+    risk_label: str
     cluster_id: int
     risk_score: float
     attributes: dict

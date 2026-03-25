@@ -63,39 +63,52 @@ async def get_profile_details(profile_id: str, request: Request):
         if inference_result:
             analysis = AnalysisInfo(
                 sybil_probability=inference_result["risk_score"],
-                classification=inference_result["label"],
+                risk_label=inference_result["label"],
                 reasoning=[inference_result["reasoning"]]
             )
         else:
             analysis = AnalysisInfo(
-                classification="INFERENCE_FAILED",
+                risk_label="INFERENCE_FAILED",
                 reasoning=["The AI models failed to process this subgraph or are not available."]
             )
         
         # 3. Local Graph
         nodes = []
         for n_id, attrs in subgraph.nodes(data=True):
+            # If this is the target node, use the inference result
+            if n_id == profile_id:
+                node_label = analysis.risk_label
+                node_risk = analysis.sybil_probability or 0.0
+                node_reason = "; ".join(analysis.reasoning) if analysis.reasoning else ""
+            else:
+                # Default for neighbors in Phase 1
+                node_label = "BENIGN"
+                node_risk = 0.0
+                node_reason = ""
+                
             nodes.append(LocalGraphNode(
                 id=n_id,
+                risk_label=node_label,
+                risk_score=node_risk,
+                cluster_id=0,
                 attributes={
                     "handle": attrs.get("handle", "unknown"),
+                    "trust_score": float(attrs.get("trust_score", 0.0)),
+                    "follower_count": int(attrs.get("total_followers", 0)),
+                    "post_count": int(attrs.get("total_posts", 0)),
                     "picture_url": attrs.get("picture_url", ""),
                     "owned_by": attrs.get("owned_by", ""),
-                    "created_on": attrs.get("created_on", ""),
-                    "trust_score": attrs.get("trust_score", 0.0)
+                    "reason": node_reason
                 }
             ))
             
         links = []
         for u, v, data in subgraph.edges(data=True):
-            if data == {}:
-                continue;
-
             links.append(LocalGraphLink(
                 source=u,
                 target=v,
                 edge_type=data.get("type", "INTERACT"),
-                weight=data.get("weight", 1.0)
+                weight=float(data.get("weight", 1.0))
             ))
             
         return InspectorProfileResponse(

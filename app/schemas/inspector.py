@@ -9,11 +9,14 @@ class ProfileInfo(BaseModel):
 
 class AnalysisInfo(BaseModel):
     sybil_probability: Optional[float] = None
-    classification: str = "PENDING_AI_INFERENCE"
+    risk_label: str = "PENDING_AI_INFERENCE"
     reasoning: List[str] = []
 
 class LocalGraphNode(BaseModel):
     id: str
+    risk_label: str = "BENIGN"
+    risk_score: float = 0.0
+    cluster_id: int = 0
     attributes: Dict[str, Any]
 
 class LocalGraphLink(BaseModel):

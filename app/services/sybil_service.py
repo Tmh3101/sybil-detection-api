@@ -62,7 +62,7 @@ class SybilService:
                     "nodes": [
                         {
                             "id": "node-1",
-                            "label": "2_HIGH_RISK",
+                            "risk_label": "HIGH_RISK",
                             "cluster_id": 0,
                             "risk_score": 0.75,
                             "attributes": {
@@ -77,7 +77,7 @@ class SybilService:
                         },
                         {
                             "id": "node-2",
-                            "label": "0_BENIGN",
+                            "risk_label": "BENIGN",
                             "cluster_id": 0,
                             "risk_score": 0.05,
                             "attributes": {
