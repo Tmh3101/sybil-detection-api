@@ -5,8 +5,6 @@ from typing import Any
 from app.core.config import get_settings
 from app.schemas.sybil import DiscoveryRequest
 
-settings = get_settings()
-
 try:
     # Optional at dev-time; production expects `modal` installed and deployed.
     import modal  # type: ignore
@@ -16,6 +14,8 @@ except ModuleNotFoundError:  # pragma: no cover
 
 class SybilService:
     """Business logic layer for sybil discovery."""
+    def __init__(self):
+        self.setting = get_settings()
 
     async def start_discovery(self, req: DiscoveryRequest) -> dict:
         """
@@ -33,8 +33,8 @@ class SybilService:
                 raise RuntimeError("Modal SDK not available")
 
             modal_func = modal.Function.from_name(
-                settings.MODAL_APP_NAME,
-                settings.MODAL_DISCOVERY_FUNCTION
+                self.settings.MODAL_APP_NAME,
+                self.settings.MODAL_DISCOVERY_FUNCTION
             )
             call = await modal_func.spawn.aio(payload)
             return {"task_id": call.object_id}
