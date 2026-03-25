@@ -174,8 +174,10 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
                 
             # 3. Phân loại bằng Random Forest
             rf_probs = models["rf_model"].predict_proba(scaled_emb)[0]
-            rf_pred_class = models["rf_model"].predict(scaled_emb)[0]
-            sybil_prob = float(rf_probs[3])  # Class 3 is Sybil
+            rf_pred_class = int(models["rf_model"].predict(scaled_emb)[0])
+            
+            # [HOTFIX]: Lấy xác suất tương ứng với class vừa được dự đoán (Confidence)
+            sybil_prob = float(rf_probs[rf_pred_class])
     except Exception as e:
         logger.exception(f"Inference pipeline failed: {e}")
         return None
