@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     MODAL_APP_NAME: str = "sybil-discovery-engine"
     MODAL_DISCOVERY_FUNCTION: str = "train_gae_pipeline"
 
+    GRAPH_DATA_PATH: str = "data/graph.pt"
+    NODE_METADATA_PATH: str = "data/nodes_full.csv"
+
     # Kept here for consistency with template-style routing.
     API_V1_STR: str = "/api/v1"
 

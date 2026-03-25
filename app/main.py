@@ -7,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.services.inspector_service import load_reference_graph
 from app.core.model_loader import load_models
+from app.core.config import get_settings
+
+settings = get_settings()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
 logger = logging.getLogger(__name__)
@@ -20,12 +23,11 @@ async def lifespan(app: FastAPI):
     Initializes the Graph Backbone and AI Models.
     """
     logger.info("Initializing Graph Backbone...")
-    
-    # Paths for data files (hardcoded for now, move to config later)
-    pt_path = "data/graph.pt"
-    meta_path = "data/nodes_full.csv"
 
-    app.state.graph = await load_reference_graph(pt_path, meta_path)
+    app.state.graph = await load_reference_graph(
+        settings.GRAPH_DATA_PATH,
+        settings.NODE_METADATA_PATH
+    )
     
     logger.info(
         f"Backbone ready! Nodes: {app.state.graph.number_of_nodes()}, "
@@ -45,7 +47,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Web3 Sybil Detection Dashboard API",
+    title="Lens Protocol Sybil Detection API",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -60,5 +62,5 @@ app.add_middleware(
 )
 
 # API routes
-app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
