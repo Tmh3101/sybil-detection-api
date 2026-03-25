@@ -531,7 +531,7 @@ def train_gae_pipeline(payload: dict) -> dict:
                 "post_count": int(node_row["total_posts"]) if pd.notnull(node_row["total_posts"]) else 0,
                 "picture_url": str(node_row["picture_url"]) if pd.notnull(node_row["picture_url"]) else None,
                 "owned_by": str(node_row["owned_by"]) if pd.notnull(node_row["owned_by"]) else None,
-                "reason": c_info["reasons"]
+                "reasons": c_info["reasons"]
             }
         })
 
