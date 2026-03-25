@@ -176,8 +176,14 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             rf_probs = models["rf_model"].predict_proba(scaled_emb)[0]
             rf_pred_class = int(models["rf_model"].predict(scaled_emb)[0])
             
-            # [HOTFIX]: Lấy xác suất tương ứng với class vừa được dự đoán (Confidence)
-            sybil_prob = float(rf_probs[rf_pred_class])
+            # Predict Label and Probabilities Dictionary
+            predict_label = LABEL_MAP.get(rf_pred_class, "UNKNOWN")
+            predict_proba = {
+                "BENIGN": float(rf_probs[0]),
+                "LOW_RISK": float(rf_probs[1]) if len(rf_probs) > 1 else 0.0,
+                "HIGH_RISK": float(rf_probs[2]) if len(rf_probs) > 2 else 0.0,
+                "MALICIOUS": float(rf_probs[3]) if len(rf_probs) > 3 else 0.0
+            }
     except Exception as e:
         logger.exception(f"Inference pipeline failed: {e}")
         return None
@@ -191,18 +197,20 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             if e_type in ["CO-OWNER", "SIM_BIO", "SAME_AVATAR", "FUZZY_HANDLE", "COLLECT"]:
                 risk_edges.append(e_type)
     
-    reasoning = generate_reasoning(int(rf_pred_class), risk_edges, sybil_prob)
+    # Use confidence (highest prob) for reasoning display
+    confidence = float(rf_probs[rf_pred_class])
+    reasoning = generate_reasoning(rf_pred_class, risk_edges, confidence)
     
     return {
-        "label": LABEL_MAP.get(int(rf_pred_class), "UNKNOWN"),
-        "risk_score": sybil_prob,
+        "predict_label": predict_label,
+        "predict_proba": predict_proba,
         "reasoning": reasoning,
-        "risk_level": RISK_LEVELS.get(int(rf_pred_class), "Unknown")
+        "risk_level": RISK_LEVELS.get(rf_pred_class, "Unknown")
     }
 
-def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> str:
+def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> list:
     """
-    Generate a human-readable explanation for the AI's decision.
+    Generate a human-readable explanation for the AI's decision as a list of points.
     """
     edge_counts = Counter(risk_edges)
     reasons = []
@@ -218,8 +226,8 @@ def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> 
         
     if not reasons:
         if pred_class == 0:
-            return "No significant Sybil patterns detected. Account behavior appears consistent with organic users."
+            return ["No significant Sybil patterns detected. Account behavior appears consistent with organic users."]
         else:
-            return "Account shows some unusual activity, but no definitive Sybil indicators were found."
+            return ["Account shows some unusual activity, but no definitive Sybil indicators were found."]
             
-    return " ".join(reasons)
+    return reasons

@@ -8,8 +8,8 @@ class ProfileInfo(BaseModel):
     owned_by: Optional[str] = ""
 
 class AnalysisInfo(BaseModel):
-    sybil_probability: Optional[float] = None
-    risk_label: str = "PENDING_AI_INFERENCE"
+    predict_label: str = "PENDING_AI_INFERENCE"
+    predict_proba: Dict[str, float] = {}
     reasoning: List[str] = []
 
 class LocalGraphNode(BaseModel):

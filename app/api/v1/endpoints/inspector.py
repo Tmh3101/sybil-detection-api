@@ -62,13 +62,13 @@ async def get_profile_details(profile_id: str, request: Request):
         
         if inference_result:
             analysis = AnalysisInfo(
-                sybil_probability=inference_result["risk_score"],
-                risk_label=inference_result["label"],
-                reasoning=[inference_result["reasoning"]]
+                predict_label=inference_result["predict_label"],
+                predict_proba=inference_result["predict_proba"],
+                reasoning=inference_result["reasoning"]
             )
         else:
             analysis = AnalysisInfo(
-                risk_label="INFERENCE_FAILED",
+                predict_label="INFERENCE_FAILED",
                 reasoning=["The AI models failed to process this subgraph or are not available."]
             )
         
@@ -77,8 +77,9 @@ async def get_profile_details(profile_id: str, request: Request):
         for n_id, attrs in subgraph.nodes(data=True):
             # If this is the target node, use the inference result
             if n_id == profile_id:
-                node_label = analysis.risk_label
-                node_risk = analysis.sybil_probability or 0.0
+                node_label = analysis.predict_label
+                # Use the probability of the predicted label for node_risk
+                node_risk = analysis.predict_proba.get(analysis.predict_label, 0.0)
                 node_reason = "; ".join(analysis.reasoning) if analysis.reasoning else ""
             else:
                 # Default for neighbors in Phase 1
