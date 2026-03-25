@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.config import get_settings
 from app.schemas.sybil import DiscoveryRequest
+
+settings = get_settings()
 
 try:
     # Optional at dev-time; production expects `modal` installed and deployed.
@@ -30,8 +33,8 @@ class SybilService:
                 raise RuntimeError("Modal SDK not available")
 
             modal_func = modal.Function.from_name(
-                "sybil-discovery-engine",
-                "train_gae_pipeline",
+                settings.MODAL_APP_NAME,
+                settings.MODAL_DISCOVERY_FUNCTION
             )
             call = await modal_func.spawn.aio(payload)
             return {"task_id": call.object_id}
