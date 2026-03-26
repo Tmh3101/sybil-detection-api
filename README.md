@@ -17,6 +17,7 @@ A high-performance backend and serverless GPU worker suite for detecting Sybil a
   - **Hybrid AI Training**: Employs **Graph Autoencoders (GAE)** with **GAT** layers for representation learning, followed by K-Means and heuristic pseudo-labeling.
 - **Module 2: Profile Inspector (Real-time)**
   - **Hybrid AI Inference**: Uses a 5-component pipeline (S-BERT + GAT + RF) to score profiles in sub-seconds.
+  - **Explainable AI (XAI)**: Extracts **GAT Attention Weights** to visualize which social connections influenced the AI's decision.
   - **Sync-to-Train Pipeline**: 100% feature consistency with training, including 12-stat numeric normalization.
   - **Graph Backbone**: High-performance **NetworkX** cache in RAM for instantaneous ego-graph extraction.
   - **On-demand Fallback**: Automatically fetches and embeds missing nodes from Google BigQuery into the live Backbone.
@@ -148,12 +149,13 @@ Retrieves job status and labeled graph data upon completion.
 
 **Link Object:**
 
-| Attribute   | Type     | Description                                   |
-| :---------- | :------- | :-------------------------------------------- |
-| `source`    | `string` | Source node ID.                               |
-| `target`    | `string` | Target node ID.                               |
-| `edge_type` | `string` | Interaction type (e.g., `FOLLOW`, `COLLECT`). |
-| `weight`    | `float`  | Edge weight strength.                         |
+| Attribute       | Type     | Description                                               |
+| :-------------- | :------- | :-------------------------------------------------------- |
+| `source`        | `string` | Source node ID.                                           |
+| `target`        | `string` | Target node ID.                                           |
+| `edge_type`     | `string` | Interaction type (e.g., `FOLLOW`, `COLLECT`).             |
+| `weight`        | `float`  | Edge weight strength.                                     |
+| `gat_attention` | `float`  | AI model's attention weight for this edge (0.0 to 1.0). |
 
 ---
 
@@ -175,12 +177,12 @@ Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
 | `profile_info.picture_url`   | `string` | URL to profile picture.                               |
 | `profile_info.owned_by`      | `string` | Owner wallet address.                                 |
 | `analysis`                   | `object` | AI inference results.                                 |
-| `analysis.sybil_probability` | `float`  | Risk score (0.0 to 1.0).                              |
-| `analysis.risk_label`        | `string` | Sanitized risk level classification (e.g., `BENIGN`). |
+| `analysis.predict_label`     | `string` | The predicted risk level (e.g., `HIGH_RISK`).         |
+| `analysis.predict_proba`     | `object` | Dictionary of probabilities for all risk levels.      |
 | `analysis.reasoning`         | `array`  | Human-readable explanation strings.                   |
 | `local_graph`                | `object` | Ego-graph (radius=1) with unified node schema.        |
-| `local_graph.nodes`          | `array`  | List of connected profiles (Matching Golden Schema).  |
-| `local_graph.links`          | `array`  | List of interaction edges (`edge_type`).              |
+| `local_graph.nodes`          | `array`  | List of connected profiles (Matching Node Object).    |
+| `local_graph.links`          | `array`  | List of interaction edges (Matching Link Object).     |
 
 ---
 
@@ -190,7 +192,7 @@ To ensure maximum accuracy, the inference engine follows a strict stage process 
 
 1. **Numeric Preprocessing**: Extracts 12 specific on-chain metrics (trust score, activity levels, etc.) and scales them using a pre-trained `MinMaxScaler`.
 2. **Semantic NLP**: Generates 384D embeddings from profile metadata (Handle, Name, Bio) using `all-MiniLM-L6-v2`.
-3. **Graph Attention (GAT)**: A pre-trained GAT model processes the local ego-graph to extract a 16D structural embedding.
+3. **Graph Attention (GAT)**: A pre-trained GAT model processes the local ego-graph to extract a 16D structural embedding. **During this stage, edge attention weights are extracted for XAI visualization.**
 4. **Ensemble Classification**: A **Random Forest** model performs the final classification into four risk levels: `BENIGN`, `LOW_RISK`, `MEDIUM_RISK`, and `HIGH_RISK`.
 5. **Reasoning Engine**: Scans direct graph connections (e.g., `CO-OWNER`, `SIM_BIO`) to generate human-readable explanations.
 

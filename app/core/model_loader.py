@@ -33,8 +33,8 @@ class GATClassifier(nn.Module):
         x = F.elu(x)
         x = F.dropout(x, p=0.3, training=self.training)
 
-        x = self.conv2(x, edge_index, edge_attr=edge_attr)
-        return x
+        x, (attn_edge_index, attn_weights) = self.conv2(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
+        return x, (attn_edge_index, attn_weights)
 
 def load_models(data_dir: str = "data"):
     """

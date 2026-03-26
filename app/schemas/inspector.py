@@ -24,6 +24,7 @@ class LocalGraphLink(BaseModel):
     target: str
     edge_type: str = "MENTION"
     weight: float = 1.0
+    gat_attention: float = 0.0
 
 class LocalGraph(BaseModel):
     nodes: List[LocalGraphNode]

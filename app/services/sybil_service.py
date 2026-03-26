@@ -100,6 +100,7 @@ class SybilService:
                             "target": "node-2",
                             "edge_type": "FOLLOW",
                             "weight": 2.0,
+                            "gat_attention": 0.0,
                         },
                     ],
                     "cluster_count": 10,

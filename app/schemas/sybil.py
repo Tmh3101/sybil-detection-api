@@ -35,6 +35,7 @@ class LinkSchema(BaseModel):
     target: str
     edge_type: str
     weight: float
+    gat_attention: float = 0.0
 
 
 class GraphDataSchema(BaseModel):

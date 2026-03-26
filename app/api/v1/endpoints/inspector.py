@@ -110,7 +110,8 @@ async def get_profile_details(profile_id: str, request: Request):
                 source=u,
                 target=v,
                 edge_type=data.get("type", "UNKNOWN"),
-                weight=float(data.get("weight", 1.0))
+                weight=float(data.get("weight", 1.0)),
+                gat_attention=float(data.get("gat_attention", 0.0))
             ))
             
         return InspectorProfileResponse(

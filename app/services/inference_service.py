@@ -156,16 +156,30 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
         models["gat_model"].eval()
         with torch.no_grad():
             # 1. Trích xuất đặc trưng bằng GAT -> [N, 16]
-            embeddings = models["gat_model"](x, edge_index, edge_attr)
+            embeddings, (attn_edge_index, attn_weights) = models["gat_model"](x, edge_index, edge_attr)
             target_emb = embeddings[target_idx].cpu().numpy().reshape(1, -1)
             
-            # 2. Chuẩn hóa Embedding cho ML
+            # 2. Map Attention Weights to Wallet IDs
+            idx_to_node = {i: n_id for n_id, i in node_to_idx.items()}
+            attn_edge_index_np = attn_edge_index.cpu().numpy()
+            attn_weights_np = attn_weights.cpu().numpy()
+
+            attention_map = {}
+            for i in range(attn_edge_index_np.shape[1]):
+                u_idx = attn_edge_index_np[0, i]
+                v_idx = attn_edge_index_np[1, i]
+                # Each GAT layer might have multiple heads; we take the first head's weight if needed
+                # or the average. Since we used concat=False in the final layer, attn_weights is [E, 1]
+                weight_val = float(attn_weights_np[i][0]) if len(attn_weights_np[i]) > 0 else 0.0
+                attention_map[(idx_to_node[u_idx], idx_to_node[v_idx])] = weight_val
+
+            # 3. Chuẩn hóa Embedding cho ML
             if models.get("embedding_scaler"):
                 scaled_emb = models["embedding_scaler"].transform(target_emb)
             else:
                 scaled_emb = target_emb
                 
-            # 3. Phân loại bằng Random Forest
+            # 4. Phân loại bằng Random Forest
             rf_probs = models["rf_model"].predict_proba(scaled_emb)[0]
             rf_pred_class = int(models["rf_model"].predict(scaled_emb)[0])
             
@@ -181,10 +195,16 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
         logger.exception(f"Inference pipeline failed: {e}")
         return None
 
-    # 4. Reasoning
+    # 4. Reasoning & Edge Attention Assignment
     # Scan direct connections of the target node for risky patterns
     risk_edges = []
     for u, v, data in subgraph.edges(data=True):
+        # Inject GAT attention into the subgraph edge so it's serialized later
+        gat_attention = attention_map.get((u, v), 0.0)
+        # NetworkX MultiDiGraph stores data in a dict inside the third element of the edge tuple if using data=True
+        # and we can access the actual edge data to modify it
+        subgraph[u][v][0]['gat_attention'] = gat_attention
+        
         if u == target_id or v == target_id:
             e_type = data.get("type", "")
             if e_type in ["CO-OWNER", "SIM_BIO", "SAME_AVATAR", "FUZZY_HANDLE"]:
