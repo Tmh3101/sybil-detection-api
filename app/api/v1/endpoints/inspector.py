@@ -45,7 +45,7 @@ async def get_profile_details(profile_id: str, request: Request):
     try:
         # At this point, profile_id is guaranteed to be in G
         # Extract Ego-graph (radius=1)
-        subgraph = nx.ego_graph(G, profile_id, radius=1, undirected=False)
+        subgraph = nx.ego_graph(G, profile_id, radius=2, undirected=False)
         
         # 1. Profile Info
         node_data = G.nodes[profile_id]
