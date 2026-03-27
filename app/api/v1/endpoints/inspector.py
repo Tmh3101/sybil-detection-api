@@ -31,6 +31,8 @@ async def get_profile_details(profile_id: str, request: Request):
         )
     
     G = request.app.state.graph
+
+    profile_id = profile_id.lower()
     
     # Traffic Controller: Cache Hit vs Cache Miss
     if profile_id not in G:
