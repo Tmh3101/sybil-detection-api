@@ -228,17 +228,12 @@ def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> 
     """
     Generate a human-readable explanation for the AI's decision as a list of points.
     """
-    edge_counts = Counter(risk_edges)
     reasons = []
     
     if pred_class >= 2:
         reasons.append(f"AI model detected strong Sybil-like behavior (Confidence: {sybil_prob*100:.1f}%).")
     elif pred_class == 1:
         reasons.append(f"AI model identified minor suspicious patterns (Confidence: {sybil_prob*100:.1f}%).")
-    
-    if edge_counts:
-        edge_details = ", ".join([f"{count}x {etype}" for etype, count in edge_counts.items()])
-        reasons.append(f"Risk-associated connections: {edge_details}.")
         
     if not reasons:
         if pred_class == 0:
