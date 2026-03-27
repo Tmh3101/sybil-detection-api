@@ -155,23 +155,29 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     try:
         models["gat_model"].eval()
         with torch.no_grad():
-            # 1. Trích xuất đặc trưng bằng GAT -> [N, 16]
-            embeddings, (attn_edge_index, attn_weights) = models["gat_model"](x, edge_index, edge_attr)
+            # 1. Trích xuất đặc trưng bằng GAT -> [N, 16] và attention weights từ 2 layers
+            embeddings, attn_l1, attn_l2 = models["gat_model"](x, edge_index, edge_attr)
             target_emb = embeddings[target_idx].cpu().numpy().reshape(1, -1)
             
-            # 2. Map Attention Weights to Wallet IDs
+            # 2. Map & Merge Attention Weights (MAX across layers)
             idx_to_node = {i: n_id for n_id, i in node_to_idx.items()}
-            attn_edge_index_np = attn_edge_index.cpu().numpy()
-            attn_weights_np = attn_weights.cpu().numpy()
-
             attention_map = {}
-            for i in range(attn_edge_index_np.shape[1]):
-                u_idx = attn_edge_index_np[0, i]
-                v_idx = attn_edge_index_np[1, i]
-                # Each GAT layer might have multiple heads; we take the first head's weight if needed
-                # or the average. Since we used concat=False in the final layer, attn_weights is [E, 1]
-                weight_val = float(attn_weights_np[i][0]) if len(attn_weights_np[i]) > 0 else 0.0
-                attention_map[(idx_to_node[u_idx], idx_to_node[v_idx])] = weight_val
+
+            def process_attn(attn_data):
+                edge_idx, weights = attn_data
+                edge_idx_np = edge_idx.cpu().numpy()
+                weights_np = weights.cpu().numpy()
+                
+                for i in range(edge_idx_np.shape[1]):
+                    u_idx, v_idx = edge_idx_np[0, i], edge_idx_np[1, i]
+                    u_id, v_id = idx_to_node[u_idx], idx_to_node[v_idx]
+                    
+                    # Take MAX across heads
+                    val = float(np.max(weights_np[i]))
+                    attention_map[(u_id, v_id)] = max(attention_map.get((u_id, v_id), 0.0), val)
+
+            process_attn(attn_l1)
+            process_attn(attn_l2)
 
             # 3. Chuẩn hóa Embedding cho ML
             if models.get("embedding_scaler"):
@@ -196,19 +202,17 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
         return None
 
     # 4. Reasoning & Edge Attention Assignment
-    # Scan direct connections of the target node for risky patterns
+    # Scan edges for risky patterns (Global scope)
     risk_edges = []
     for u, v, data in subgraph.edges(data=True):
-        # Inject GAT attention into the subgraph edge so it's serialized later
+        # Inject GAT attention into the subgraph edge (Depth 1 & 2)
         gat_attention = attention_map.get((u, v), 0.0)
-        # NetworkX MultiDiGraph stores data in a dict inside the third element of the edge tuple if using data=True
-        # and we can access the actual edge data to modify it
         subgraph[u][v][0]['gat_attention'] = gat_attention
         
-        if u == target_id or v == target_id:
-            e_type = data.get("type", "")
-            if e_type in ["CO-OWNER", "SIM_BIO", "SAME_AVATAR", "FUZZY_HANDLE"]:
-                risk_edges.append(e_type)
+        # Risk pattern detection
+        e_type = data.get("type", "")
+        if e_type in ["CO-OWNER", "SIM_BIO", "SAME_AVATAR", "FUZZY_HANDLE"]:
+            risk_edges.append(e_type)
     
     # Use confidence (highest prob) for reasoning display
     confidence = float(rf_probs[rf_pred_class])

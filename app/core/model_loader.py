@@ -27,14 +27,14 @@ class GATClassifier(nn.Module):
 
     def forward(self, x, edge_index, edge_attr):
         """
-        Forward pass returns only the 16-dimensional embedding.
+        Forward pass returns 16-dim embedding and attention weights from both layers.
         """
-        x = self.conv1(x, edge_index, edge_attr=edge_attr)
+        x, (idx1, w1) = self.conv1(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
         x = F.elu(x)
         x = F.dropout(x, p=0.3, training=self.training)
 
-        x, (attn_edge_index, attn_weights) = self.conv2(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
-        return x, (attn_edge_index, attn_weights)
+        x, (idx2, w2) = self.conv2(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
+        return x, (idx1, w1), (idx2, w2)
 
 def load_models(data_dir: str = "data"):
     """
