@@ -55,7 +55,16 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
         # Expected columns in metadata: profile_id, handle, picture_url, owned_by
         # Using profile_id as the node key
         logger.info(f"Adding {len(df_meta)} nodes to Backbone...")
-        for _, row in df_meta.iterrows():
+        
+        # Extract labels from PyG data if available (data.y)
+        labels = []
+        if hasattr(data, "y") and data.y is not None:
+            labels = data.y.view(-1).tolist()
+        else:
+            # Default to BENIGN (0) if labels are missing
+            labels = [0] * len(df_meta)
+
+        for i, row in df_meta.iterrows():
             profile_id = str(row["profile_id"])
             G.add_node(
                 profile_id,
@@ -76,7 +85,8 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 total_collects=row.get("total_collects", 0),
                 total_comments=row.get("total_comments", 0),
                 total_followers=row.get("total_followers", 0),
-                total_following=row.get("total_following", 0)
+                total_following=row.get("total_following", 0),
+                label=int(labels[i]) if i < len(labels) else 0
             )
 
         # Add Edges

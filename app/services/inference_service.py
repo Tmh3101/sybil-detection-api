@@ -217,11 +217,19 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     # Use confidence (highest prob) for reasoning display
     confidence = float(rf_probs[rf_pred_class])
     reasoning = generate_reasoning(rf_pred_class, risk_edges, confidence)
+
+    # Fetch neighbor labels from graph metadata (attached to nodes during load)
+    neighbor_labels = {}
+    for n_id, attrs in subgraph.nodes(data=True):
+        if n_id != target_id:
+            label_idx = attrs.get("label", 0)  # Default to 0 (BENIGN)
+            neighbor_labels[n_id] = LABEL_MAP.get(label_idx, "UNKNOWN")
     
     return {
         "predict_label": predict_label,
         "predict_proba": predict_proba,
-        "reasoning": reasoning
+        "reasoning": reasoning,
+        "neighbor_labels": neighbor_labels
     }
 
 def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> list:

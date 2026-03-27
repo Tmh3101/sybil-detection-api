@@ -76,6 +76,10 @@ async def get_profile_details(profile_id: str, request: Request):
         
         # 3. Local Graph
         nodes = []
+        # Mapping for neighbor risk scores (representative values for UI)
+        risk_score_map = {"BENIGN": 0.0, "LOW_RISK": 0.3, "HIGH_RISK": 0.7, "MALICIOUS": 1.0}
+        neighbor_labels = inference_result.get("neighbor_labels", {}) if inference_result else {}
+        
         for n_id, attrs in subgraph.nodes(data=True):
             # If this is the target node, use the inference result
             if n_id == profile_id:
@@ -84,10 +88,10 @@ async def get_profile_details(profile_id: str, request: Request):
                 node_risk = analysis.predict_proba.get(analysis.predict_label, 0.0)
                 node_reason = "; ".join(analysis.reasoning) if analysis.reasoning else ""
             else:
-                # Default for neighbors in Phase 1
-                node_label = "BENIGN"
-                node_risk = 0.0
-                node_reason = ""
+                # Use pre-labeled risk from graph Backbone for neighbors
+                node_label = neighbor_labels.get(n_id, "BENIGN")
+                node_risk = risk_score_map.get(node_label, 0.0)
+                node_reason = f"Labeled as {node_label} in Backbone."
                 
             nodes.append(LocalGraphNode(
                 id=n_id,
