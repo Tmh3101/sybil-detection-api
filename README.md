@@ -315,5 +315,24 @@ uvicorn app.main:app --reload
 
 ---
 
+## 🛠️ Code Quality & CI
+
+This project maintains high code quality standards through automated formatting and linting:
+
+- **Formatting**: We use [Black](https://github.com/psf/black) with a line length of 88.
+- **Linting**: We use [Ruff](https://github.com/astral-sh/ruff) for fast and comprehensive linting.
+- **CI/CD**: A GitHub Action (`CI`) is configured to run these checks automatically on every push and pull request to the `main` branch.
+
+To run checks locally:
+```bash
+# Format code
+black .
+
+# Run linting
+ruff check .
+```
+
+---
+
 > [!TIP]
 > For a deep dive into the ML architecture and pseudo-labeling logic, see the [Detailed Workflow Documentation](docs/module1_detailed_workflow.md).

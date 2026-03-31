@@ -31,4 +31,3 @@ async def discovery_status(
 ):
     """Dummy endpoint returning discovery status by task id."""
     return await sybil_service.get_discovery_status(task_id=task_id)
-

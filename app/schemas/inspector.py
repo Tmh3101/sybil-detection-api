@@ -1,16 +1,19 @@
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
+
 class ProfileInfo(BaseModel):
     id: str
     handle: Optional[str] = "unknown"
     picture_url: Optional[str] = ""
     owned_by: Optional[str] = ""
 
+
 class AnalysisInfo(BaseModel):
     predict_label: str = "PENDING_AI_INFERENCE"
     predict_proba: Dict[str, float] = {}
     reasoning: List[str] = []
+
 
 class LocalGraphNode(BaseModel):
     id: str
@@ -19,6 +22,7 @@ class LocalGraphNode(BaseModel):
     cluster_id: int = 0
     attributes: Dict[str, Any]
 
+
 class LocalGraphLink(BaseModel):
     source: str
     target: str
@@ -26,9 +30,11 @@ class LocalGraphLink(BaseModel):
     weight: float = 1.0
     gat_attention: float = 0.0
 
+
 class LocalGraph(BaseModel):
     nodes: List[LocalGraphNode]
     links: List[LocalGraphLink]
+
 
 class InspectorProfileResponse(BaseModel):
     profile_info: ProfileInfo

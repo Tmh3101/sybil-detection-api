@@ -14,6 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 class SybilService:
     """Business logic layer for sybil discovery."""
+
     def __init__(self):
         self.settings = get_settings()
 
@@ -33,8 +34,7 @@ class SybilService:
                 raise RuntimeError("Modal SDK not available")
 
             modal_func = modal.Function.from_name(
-                self.settings.MODAL_APP_NAME,
-                self.settings.MODAL_DISCOVERY_FUNCTION
+                self.settings.MODAL_APP_NAME, self.settings.MODAL_DISCOVERY_FUNCTION
             )
             call = await modal_func.spawn.aio(payload)
             return {"task_id": call.object_id}
@@ -75,7 +75,7 @@ class SybilService:
                                 "post_count": 100,
                                 "picture_url": None,
                                 "owned_by": "0x123...",
-                                "reason": "Low Trust Score; High Co-owner relationship"
+                                "reason": "Low Trust Score; High Co-owner relationship",
                             },
                         },
                         {
@@ -90,7 +90,7 @@ class SybilService:
                                 "post_count": 50,
                                 "picture_url": "https://...",
                                 "owned_by": "0x456...",
-                                "reason": "None"
+                                "reason": "None",
                             },
                         },
                     ],
@@ -153,4 +153,3 @@ class SybilService:
                 "graph_data": None,
                 "message": str(exc),
             }
-

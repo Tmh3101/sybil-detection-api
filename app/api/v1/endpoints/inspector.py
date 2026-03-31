@@ -1,6 +1,5 @@
 import networkx as nx
 from fastapi import APIRouter, Request, HTTPException, status
-from typing import Any
 
 from app.schemas.inspector import (
     InspectorProfileResponse,
@@ -16,6 +15,7 @@ from app.services.inference_service import evaluate_subgraph
 
 router = APIRouter()
 
+
 @router.get("/profile/{profile_id}", response_model=InspectorProfileResponse)
 async def get_profile_details(profile_id: str, request: Request):
     """
@@ -27,13 +27,13 @@ async def get_profile_details(profile_id: str, request: Request):
     if not hasattr(request.app.state, "graph") or request.app.state.graph is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Graph Backbone is not initialized yet. Please try again later."
+            detail="Graph Backbone is not initialized yet. Please try again later.",
         )
-    
+
     G = request.app.state.graph
 
     profile_id = profile_id.lower()
-    
+
     # Traffic Controller: Cache Hit vs Cache Miss
     if profile_id not in G:
         # Cache Miss -> Trigger Fallback Pipeline
@@ -41,93 +41,108 @@ async def get_profile_details(profile_id: str, request: Request):
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Profile not found on Lens Protocol or Backbone."
+                detail="Profile not found on Lens Protocol or Backbone.",
             )
-    
+
     try:
         # At this point, profile_id is guaranteed to be in G
         # Extract Ego-graph (radius=1)
         subgraph = nx.ego_graph(G, profile_id, radius=2, undirected=False)
-        
+
         # 1. Profile Info
         node_data = G.nodes[profile_id]
         profile_info = ProfileInfo(
             id=profile_id,
             handle=node_data.get("handle", "unknown"),
             picture_url=node_data.get("picture_url", ""),
-            owned_by=node_data.get("owned_by", "")
+            owned_by=node_data.get("owned_by", ""),
         )
-        
+
         # 2. AI Inference Analysis
         models = getattr(request.app.state, "models", {})
         inference_result = await evaluate_subgraph(models, subgraph, profile_id)
-        
+
         if inference_result:
             analysis = AnalysisInfo(
                 predict_label=inference_result["predict_label"],
                 predict_proba=inference_result["predict_proba"],
-                reasoning=inference_result["reasoning"]
+                reasoning=inference_result["reasoning"],
             )
         else:
             analysis = AnalysisInfo(
                 predict_label="INFERENCE_FAILED",
-                reasoning=["The AI models failed to process this subgraph or are not available."]
+                reasoning=[
+                    "The AI models failed to process this subgraph or are not available."
+                ],
             )
-        
+
         # 3. Local Graph
         nodes = []
         # Mapping for neighbor risk scores (representative values for UI)
-        risk_score_map = {"BENIGN": 0.0, "LOW_RISK": 0.3, "HIGH_RISK": 0.7, "MALICIOUS": 1.0}
-        neighbor_labels = inference_result.get("neighbor_labels", {}) if inference_result else {}
-        
+        risk_score_map = {
+            "BENIGN": 0.0,
+            "LOW_RISK": 0.3,
+            "HIGH_RISK": 0.7,
+            "MALICIOUS": 1.0,
+        }
+        neighbor_labels = (
+            inference_result.get("neighbor_labels", {}) if inference_result else {}
+        )
+
         for n_id, attrs in subgraph.nodes(data=True):
             # If this is the target node, use the inference result
             if n_id == profile_id:
                 node_label = analysis.predict_label
                 # Use the probability of the predicted label for node_risk
                 node_risk = analysis.predict_proba.get(analysis.predict_label, 0.0)
-                node_reason = "; ".join(analysis.reasoning) if analysis.reasoning else ""
+                node_reason = (
+                    "; ".join(analysis.reasoning) if analysis.reasoning else ""
+                )
             else:
                 # Use pre-labeled risk from graph Backbone for neighbors
                 node_label = neighbor_labels.get(n_id, "BENIGN")
                 node_risk = risk_score_map.get(node_label, 0.0)
                 node_reason = f"Labeled as {node_label} in Backbone."
-                
-            nodes.append(LocalGraphNode(
-                id=n_id,
-                risk_label=node_label,
-                risk_score=node_risk,
-                cluster_id=0,
-                attributes={
-                    "handle": attrs.get("handle", "unknown"),
-                    "trust_score": float(attrs.get("trust_score", 0.0)),
-                    "follower_count": int(attrs.get("total_followers", 0)),
-                    "following_count": int(attrs.get("total_following", 0)),
-                    "post_count": int(attrs.get("total_posts", 0)),
-                    "picture_url": attrs.get("picture_url", ""),
-                    "owned_by": attrs.get("owned_by", ""),
-                    "reason": node_reason
-                }
-            ))
-            
+
+            nodes.append(
+                LocalGraphNode(
+                    id=n_id,
+                    risk_label=node_label,
+                    risk_score=node_risk,
+                    cluster_id=0,
+                    attributes={
+                        "handle": attrs.get("handle", "unknown"),
+                        "trust_score": float(attrs.get("trust_score", 0.0)),
+                        "follower_count": int(attrs.get("total_followers", 0)),
+                        "following_count": int(attrs.get("total_following", 0)),
+                        "post_count": int(attrs.get("total_posts", 0)),
+                        "picture_url": attrs.get("picture_url", ""),
+                        "owned_by": attrs.get("owned_by", ""),
+                        "reason": node_reason,
+                    },
+                )
+            )
+
         links = []
         for u, v, data in subgraph.edges(data=True):
-            links.append(LocalGraphLink(
-                source=u,
-                target=v,
-                edge_type=data.get("type", "UNKNOWN"),
-                weight=float(data.get("weight", 1.0)),
-                gat_attention=float(data.get("gat_attention", 0.0))
-            ))
-            
+            links.append(
+                LocalGraphLink(
+                    source=u,
+                    target=v,
+                    edge_type=data.get("type", "UNKNOWN"),
+                    weight=float(data.get("weight", 1.0)),
+                    gat_attention=float(data.get("gat_attention", 0.0)),
+                )
+            )
+
         return InspectorProfileResponse(
             profile_info=profile_info,
             analysis=analysis,
-            local_graph=LocalGraph(nodes=nodes, links=links)
+            local_graph=LocalGraph(nodes=nodes, links=links),
         )
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred while extracting ego-graph: {str(e)}"
+            detail=f"An error occurred while extracting ego-graph: {str(e)}",
         )

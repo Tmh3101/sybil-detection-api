@@ -4,24 +4,19 @@ import pandas as pd
 from datetime import datetime, timezone
 import logging
 import networkx as nx
-from collections import Counter
 
 # Re-use EDGE_WEIGHTS from fallback_service to maintain consistency
 from app.services.fallback_service import EDGE_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
-LABEL_MAP = {
-    0: "BENIGN",
-    1: "LOW_RISK",
-    2: "HIGH_RISK",
-    3: "MALICIOUS"
-}
+LABEL_MAP = {0: "BENIGN", 1: "LOW_RISK", 2: "HIGH_RISK", 3: "MALICIOUS"}
+
 
 async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: str):
     """
     Perform Hybrid AI inference on a given ego-graph.
-    
+
     Quy trình 100% đồng bộ với training:
     1. Preprocessing Numeric Features (12 cols) -> feature_scaler
     2. NLP Embeddings (384 dim) -> nlp_model
@@ -44,16 +39,16 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
 
     N = len(node_list)
     now = datetime.now(timezone.utc)
-    
+
     # --- A. Numeric Features (Nx12) ---
-    # Column order MUST BE: ['trust_score', 'total_tips', 'total_posts', 'total_quotes', 
-    # 'total_reacted', 'total_reactions', 'total_reposts', 'total_collects', 
+    # Column order MUST BE: ['trust_score', 'total_tips', 'total_posts', 'total_quotes',
+    # 'total_reacted', 'total_reactions', 'total_reposts', 'total_collects',
     # 'total_comments', 'total_followers', 'total_following', 'days_active']
-    
+
     numeric_data = []
     for n_id in node_list:
         attrs = subgraph.nodes[n_id]
-        
+
         # Calculate days_active
         created_on = attrs.get("created_on")
         days_active = 0
@@ -66,7 +61,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
                 days_active = (now - created_dt).days
             except Exception:
                 days_active = 0
-            
+
         stats = [
             float(attrs.get("trust_score", 0.0) or 0.0),
             float(attrs.get("total_tips", 0.0) or 0.0),
@@ -79,7 +74,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             float(attrs.get("total_comments", 0.0) or 0.0),
             float(attrs.get("total_followers", 0.0) or 0.0),
             float(attrs.get("total_following", 0.0) or 0.0),
-            float(max(0, days_active))
+            float(max(0, days_active)),
         ]
         numeric_data.append(stats)
 
@@ -93,7 +88,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             numeric_scaled = numeric_np
     else:
         numeric_scaled = numeric_np
-    
+
     numeric_tensor = torch.tensor(numeric_scaled, dtype=torch.float)
 
     # --- B. Text Embeddings (Nx384) ---
@@ -104,11 +99,11 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
         # If display_name is missing, fallback to handle or space to avoid 'None'
         display_name = attrs.get("display_name") or attrs.get("handle") or " "
         bio = attrs.get("bio") or ""
-        
+
         # MANDATORY SYNTAX: Handle: {handle}. Name: {display_name}. Bio: {bio}
         text = f"Handle: {handle}. Name: {display_name}. Bio: {bio}"
         texts.append(text)
-    
+
     if models.get("nlp_model"):
         try:
             # sentence_transformers.encode returns a numpy array or tensor
@@ -122,27 +117,27 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
 
     # --- C. Concat Node Features (X) [N, 396] ---
     x = torch.cat([numeric_tensor, text_tensor], dim=1)
-    
+
     # 2. Prepare Edges
     src_indices = []
     dst_indices = []
     weights = []
-    
+
     node_to_idx = {n_id: i for i, n_id in enumerate(node_list)}
-    
+
     for u, v, data in subgraph.edges(data=True):
         if u in node_to_idx and v in node_to_idx:
             src_indices.append(node_to_idx[u])
             dst_indices.append(node_to_idx[v])
-            
+
             # Use weight from data if present, else lookup from EDGE_WEIGHTS
             weight = data.get("weight")
             if weight is None:
                 e_type = data.get("type", "UNKNOWN")
                 weight = EDGE_WEIGHTS.get(e_type, 1.0)
-            
+
             weights.append(float(weight))
-            
+
     if not src_indices:
         # Self-loops if no edges (GAT requires edge_index)
         edge_index = torch.zeros((2, 0), dtype=torch.long)
@@ -158,7 +153,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             # 1. Trích xuất đặc trưng bằng GAT -> [N, 16] và attention weights từ 2 layers
             embeddings, attn_l1, attn_l2 = models["gat_model"](x, edge_index, edge_attr)
             target_emb = embeddings[target_idx].cpu().numpy().reshape(1, -1)
-            
+
             # 2. Map & Merge Attention Weights (MAX across layers)
             idx_to_node = {i: n_id for n_id, i in node_to_idx.items()}
             attention_map = {}
@@ -167,14 +162,16 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
                 edge_idx, weights = attn_data
                 edge_idx_np = edge_idx.cpu().numpy()
                 weights_np = weights.cpu().numpy()
-                
+
                 for i in range(edge_idx_np.shape[1]):
                     u_idx, v_idx = edge_idx_np[0, i], edge_idx_np[1, i]
                     u_id, v_id = idx_to_node[u_idx], idx_to_node[v_idx]
-                    
+
                     # Take MAX across heads
                     val = float(np.max(weights_np[i]))
-                    attention_map[(u_id, v_id)] = max(attention_map.get((u_id, v_id), 0.0), val)
+                    attention_map[(u_id, v_id)] = max(
+                        attention_map.get((u_id, v_id), 0.0), val
+                    )
 
             process_attn(attn_l1)
             process_attn(attn_l2)
@@ -184,18 +181,18 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
                 scaled_emb = models["embedding_scaler"].transform(target_emb)
             else:
                 scaled_emb = target_emb
-                
+
             # 4. Phân loại bằng Random Forest
             rf_probs = models["rf_model"].predict_proba(scaled_emb)[0]
             rf_pred_class = int(models["rf_model"].predict(scaled_emb)[0])
-            
+
             # Predict Label and Probabilities Dictionary
             predict_label = LABEL_MAP.get(rf_pred_class, "UNKNOWN")
             predict_proba = {
                 "BENIGN": float(rf_probs[0]),
                 "LOW_RISK": float(rf_probs[1]) if len(rf_probs) > 1 else 0.0,
                 "HIGH_RISK": float(rf_probs[2]) if len(rf_probs) > 2 else 0.0,
-                "MALICIOUS": float(rf_probs[3]) if len(rf_probs) > 3 else 0.0
+                "MALICIOUS": float(rf_probs[3]) if len(rf_probs) > 3 else 0.0,
             }
     except Exception as e:
         logger.exception(f"Inference pipeline failed: {e}")
@@ -207,16 +204,19 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     for u, v, data in subgraph.edges(data=True):
         # Inject GAT attention into the subgraph edge (Depth 1 & 2)
         gat_attention = attention_map.get((u, v), 0.0)
-        subgraph[u][v][0]['gat_attention'] = gat_attention
-        
+        subgraph[u][v][0]["gat_attention"] = gat_attention
+
         # Risk pattern detection
         RISK_EDGE_TYPES = {
-            "CO-OWNER", "SIMILARITY",
-            "SIM_BIO", "FUZZY_HANDLE", "CLOSE_CREATION_TIME"
+            "CO-OWNER",
+            "SIMILARITY",
+            "SIM_BIO",
+            "FUZZY_HANDLE",
+            "CLOSE_CREATION_TIME",
         }
         if e_type in RISK_EDGE_TYPES:
             risk_edges.append(e_type)
-    
+
     # Use confidence (highest prob) for reasoning display
     confidence = float(rf_probs[rf_pred_class])
     reasoning = generate_reasoning(rf_pred_class, risk_edges, confidence)
@@ -227,17 +227,18 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
         if n_id != target_id:
             label_idx = attrs.get("label", 0)  # Default to 0 (BENIGN)
             neighbor_labels[n_id] = LABEL_MAP.get(label_idx, "UNKNOWN")
-    
+
     return {
         "predict_label": predict_label,
         "predict_proba": predict_proba,
         "reasoning": reasoning,
-        "neighbor_labels": neighbor_labels
+        "neighbor_labels": neighbor_labels,
     }
+
 
 def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> list:
     reasons = []
-    
+
     if pred_class >= 2:
         reasons.append(
             f"AI model detected strong Sybil-like behavior "
@@ -248,14 +249,15 @@ def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> 
             f"AI model identified suspicious patterns "
             f"(Confidence: {sybil_prob*100:.1f}%)."
         )
-    
+
     if risk_edges:
         from collections import Counter
+
         counts = Counter(risk_edges)
         detail = ", ".join(f"{v}x {k}" for k, v in counts.most_common(3))
         reasons.append(f"Risk-associated connections: {detail}.")
-    
+
     if not reasons:
         return ["No significant Sybil patterns detected."]
-    
+
     return reasons

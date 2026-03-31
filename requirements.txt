@@ -10,3 +10,7 @@ torch
 torch-geometric
 sentence-transformers
 joblib
+google-cloud-bigquery
+db-dtypes
+numpy
+transformers

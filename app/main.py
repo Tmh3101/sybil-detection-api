@@ -25,10 +25,9 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Graph Backbone...")
 
     app.state.graph = await load_reference_graph(
-        settings.GRAPH_DATA_PATH,
-        settings.NODE_METADATA_PATH
+        settings.GRAPH_DATA_PATH, settings.NODE_METADATA_PATH
     )
-    
+
     logger.info(
         f"Backbone ready! Nodes: {app.state.graph.number_of_nodes()}, "
         f"Edges: {app.state.graph.number_of_edges()}"
@@ -37,9 +36,9 @@ async def lifespan(app: FastAPI):
     logger.info("Loading AI Models...")
     app.state.models = load_models("data")
     logger.info("AI Models loaded.")
-    
+
     yield
-    
+
     # Shutdown logic
     app.state.graph.clear()
     app.state.models.clear()
@@ -63,4 +62,3 @@ app.add_middleware(
 
 # API routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
-

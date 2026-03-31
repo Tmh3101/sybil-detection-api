@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import modal
+
 # from modal import Mount, asgi_app
 
 # Phase 1: Môi trường & Kéo Dữ Liệu (Data Ingestion)
@@ -20,9 +21,9 @@ image = (
         "sentence-transformers==2.7.0",
         "numpy<2.0.0",
         "transformers==4.36.2",
-        "fastapi[standard]", # Thêm cho Module 2
-        "pydantic",          # Thêm cho Module 2
-        "joblib"             # Thêm để load mô hình ML
+        "fastapi[standard]",  # Thêm cho Module 2
+        "pydantic",  # Thêm cho Module 2
+        "joblib",  # Thêm để load mô hình ML
     )
     .run_commands(
         "python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', device='cpu')\""
@@ -58,18 +59,22 @@ def fetch_bigquery_data(start_date: str, end_date: str, max_nodes: int = 2000):
 
     # Đọc nội dung JSON từ Modal Secret (GOOGLE_APPLICATION_CREDENTIALS chứa JSON string)
     creds_json_str = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    
+
     if creds_json_str:
         try:
             creds_dict = json.loads(creds_json_str)
-            credentials = service_account.Credentials.from_service_account_info(creds_dict)
+            credentials = service_account.Credentials.from_service_account_info(
+                creds_dict
+            )
             client = bigquery.Client(
-                credentials=credentials, 
-                project=creds_dict.get("project_id"), 
-                location="US"
+                credentials=credentials,
+                project=creds_dict.get("project_id"),
+                location="US",
             )
         except json.JSONDecodeError:
-            print("[Error] GOOGLE_APPLICATION_CREDENTIALS không phải là JSON hợp lệ. Thử mặc định.")
+            print(
+                "[Error] GOOGLE_APPLICATION_CREDENTIALS không phải là JSON hợp lệ. Thử mặc định."
+            )
             client = bigquery.Client(location="US")
     else:
         client = bigquery.Client(location="US")
@@ -162,51 +167,64 @@ def fetch_bigquery_data(start_date: str, end_date: str, max_nodes: int = 2000):
 
     # Calculate days_active
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
-    df_nodes['created_on'] = pd.to_datetime(df_nodes['created_on'], utc=True)
-    df_nodes['days_active'] = (now - df_nodes['created_on']).dt.days.fillna(0).astype(float)
+    df_nodes["created_on"] = pd.to_datetime(df_nodes["created_on"], utc=True)
+    df_nodes["days_active"] = (
+        (now - df_nodes["created_on"]).dt.days.fillna(0).astype(float)
+    )
 
     # Tích hợp hàm parse_metadata
     import ast
 
     def parse_metadata(meta_str):
         if pd.isna(meta_str) or not meta_str:
-            return ("", "") # Trả về tuple thay vì pd.Series
+            return ("", "")  # Trả về tuple thay vì pd.Series
         try:
             # Đảm bảo parse chuỗi an toàn
-            meta = ast.literal_eval(str(meta_str)).get('lens', {})
-            return (meta.get('bio', '') or "", meta.get('picture', '') or "")
-        except:
+            meta = ast.literal_eval(str(meta_str)).get("lens", {})
+            return (meta.get("bio", "") or "", meta.get("picture", "") or "")
+        except Exception:
             return ("", "")
-        
+
     print(df_nodes.head())
 
     # Bắt buộc check DataFrame rỗng trước khi xử lý cột
     if df_nodes.empty:
-        df_nodes['bio'] = ""
-        df_nodes['picture_url'] = ""
-        df_nodes['has_avatar'] = 0
+        df_nodes["bio"] = ""
+        df_nodes["picture_url"] = ""
+        df_nodes["has_avatar"] = 0
     elif "raw_metadata" in df_nodes.columns:
         # Parse data thành list các tuples
-        parsed_data = df_nodes['raw_metadata'].apply(parse_metadata)
-        
+        parsed_data = df_nodes["raw_metadata"].apply(parse_metadata)
+
         # Tách an toàn vào từng cột
-        df_nodes['bio'] = [x[0] for x in parsed_data]
-        df_nodes['picture_url'] = [x[1] for x in parsed_data]
-        
+        df_nodes["bio"] = [x[0] for x in parsed_data]
+        df_nodes["picture_url"] = [x[1] for x in parsed_data]
+
         # Cập nhật lại cột has_avatar dựa trên picture_url
-        df_nodes['has_avatar'] = df_nodes['picture_url'].apply(lambda x: 1 if (x and x != "") else 0)
+        df_nodes["has_avatar"] = df_nodes["picture_url"].apply(
+            lambda x: 1 if (x and x != "") else 0
+        )
     else:
         # Fallback an toàn nếu không tìm thấy cột
-        df_nodes['bio'] = ""
-        df_nodes['picture_url'] = ""
-        df_nodes['has_avatar'] = 0
+        df_nodes["bio"] = ""
+        df_nodes["picture_url"] = ""
+        df_nodes["has_avatar"] = 0
 
     # Xử lý các giá trị null trong node features
     cols_to_fix = [
-        'total_posts', 'total_comments', 'total_reposts', 'total_collects', 
-        'total_followers', 'total_following', 'total_tips', 'total_quotes', 
-        'total_reacted', 'total_reactions', 'trust_score'
+        "total_posts",
+        "total_comments",
+        "total_reposts",
+        "total_collects",
+        "total_followers",
+        "total_following",
+        "total_tips",
+        "total_quotes",
+        "total_reacted",
+        "total_reactions",
+        "trust_score",
     ]
     df_nodes[cols_to_fix] = df_nodes[cols_to_fix].fillna(0)
 
@@ -230,7 +248,7 @@ def build_pyg_graph(df_nodes, df_edges):
 
     # --- STEP 1: Reorder Edge Logic (Identify all potential edges) ---
     edges_list = []
-    
+
     # 1.1 Existing edges from BigQuery (Follow/Interact)
     # Step 1: Đếm số lần tương tác cùng loại giữa cùng cặp node
     interaction_counts = defaultdict(int)
@@ -239,9 +257,14 @@ def build_pyg_graph(df_nodes, df_edges):
         interaction_counts[key] += 1
 
     BASE_WEIGHTS_LOCAL = {
-        'FOLLOW': 1.0, 'UPVOTE': 1.0, 'REACTION': 1.0,
-        'COMMENT': 2.0, 'QUOTE': 2.0, 'MIRROR': 3.0,
-        'COLLECT': 4.0, 'TIP': 4.0,
+        "FOLLOW": 1.0,
+        "UPVOTE": 1.0,
+        "REACTION": 1.0,
+        "COMMENT": 2.0,
+        "QUOTE": 2.0,
+        "MIRROR": 3.0,
+        "COLLECT": 4.0,
+        "TIP": 4.0,
     }
     DIRECTED_TYPES = set(BASE_WEIGHTS_LOCAL.keys())
 
@@ -253,26 +276,30 @@ def build_pyg_graph(df_nodes, df_edges):
         if key in seen:
             continue
         seen.add(key)
-        
+
         n = interaction_counts[key]
         base = BASE_WEIGHTS_LOCAL.get(row["type"], 1.0)
         log_weight = base * (1 + math.log10(max(1, n)))
-        
-        edges_list.append({
-            "source": row["source"],
-            "target": row["target"],
-            "type": row["type"],
-            "weight": log_weight
-        })
-        
+
+        edges_list.append(
+            {
+                "source": row["source"],
+                "target": row["target"],
+                "type": row["type"],
+                "weight": log_weight,
+            }
+        )
+
         # Step 3: Sinh REV edge cho directed edges
         if row["type"] in DIRECTED_TYPES:
-            edges_list.append({
-                "source": row["target"],
-                "target": row["source"],
-                "type": row["type"] + "_REV",
-                "weight": log_weight * 0.5
-            })
+            edges_list.append(
+                {
+                    "source": row["target"],
+                    "target": row["source"],
+                    "type": row["type"] + "_REV",
+                    "weight": log_weight * 0.5,
+                }
+            )
 
     # 1.2 CO-OWNER edges (Logic Python)
     df_owned = df_nodes[df_nodes["owned_by"].notnull()]
@@ -280,20 +307,26 @@ def build_pyg_graph(df_nodes, df_edges):
         if len(group) > 1:
             pids = group["profile_id"].tolist()
             for src, dst in itertools.combinations(pids, 2):
-                edges_list.append({"source": src, "target": dst, "type": "CO-OWNER", "weight": 5.0})
+                edges_list.append(
+                    {"source": src, "target": dst, "type": "CO-OWNER", "weight": 5.0}
+                )
 
     # 1.3 SIMILARITY edges (Close Creation Time)
     df_nodes["created_dt"] = pd.to_datetime(df_nodes["created_on"])
     df_sorted = df_nodes.sort_values("created_dt")
     for i in range(len(df_sorted) - 1):
-        diff = (df_sorted.iloc[i+1]["created_dt"] - df_sorted.iloc[i]["created_dt"]).total_seconds()
+        diff = (
+            df_sorted.iloc[i + 1]["created_dt"] - df_sorted.iloc[i]["created_dt"]
+        ).total_seconds()
         if diff < 5:
-            edges_list.append({
-                "source": df_sorted.iloc[i]["profile_id"],
-                "target": df_sorted.iloc[i+1]["profile_id"],
-                "type": "SIMILARITY",
-                "weight": 3.0
-            })
+            edges_list.append(
+                {
+                    "source": df_sorted.iloc[i]["profile_id"],
+                    "target": df_sorted.iloc[i + 1]["profile_id"],
+                    "type": "SIMILARITY",
+                    "weight": 3.0,
+                }
+            )
 
     # --- STEP 2: Identify Connected Nodes ---
     connected_node_ids = set()
@@ -305,19 +338,30 @@ def build_pyg_graph(df_nodes, df_edges):
     # Keep only nodes that have at least one edge and are present in df_nodes
     all_available_pids = set(df_nodes["profile_id"])
     valid_connected_nodes = connected_node_ids.intersection(all_available_pids)
-    df_nodes_pruned = df_nodes[df_nodes["profile_id"].isin(valid_connected_nodes)].copy()
+    df_nodes_pruned = df_nodes[
+        df_nodes["profile_id"].isin(valid_connected_nodes)
+    ].copy()
 
     # --- STEP 4: Re-index node mapping based on pruned nodes ---
     node_ids = df_nodes_pruned["profile_id"].tolist()
     id_to_idx = {pid: i for i, pid in enumerate(node_ids)}
 
     # --- STEP 5: Clean Edges: filter out edges that reference pruned nodes (safeguard) ---
-    edges_list = [e for e in edges_list if e["source"] in id_to_idx and e["target"] in id_to_idx]
+    edges_list = [
+        e for e in edges_list if e["source"] in id_to_idx and e["target"] in id_to_idx
+    ]
 
     # --- STEP 6: Optimized Feature Extraction (only on connected nodes) ---
     if df_nodes_pruned.empty:
         # Return empty data if no connected nodes found
-        return Data(x=torch.empty((0, 396)), edge_index=torch.empty((2, 0), dtype=torch.long)), [], []
+        return (
+            Data(
+                x=torch.empty((0, 396)),
+                edge_index=torch.empty((2, 0), dtype=torch.long),
+            ),
+            [],
+            [],
+        )
 
     model = SentenceTransformer("all-MiniLM-L6-v2")
     text_data = []
@@ -331,20 +375,22 @@ def build_pyg_graph(df_nodes, df_edges):
         text_data.append(f"Handle: {handle}. Name: {name}. Bio: {bio}")
 
         # On-chain raw: 12 features in specific order (matching research pipeline)
-        onchain_features_raw.append([
-            float(row["trust_score"]),
-            float(row["total_tips"]),
-            float(row["total_posts"]),
-            float(row["total_quotes"]),
-            float(row["total_reacted"]),
-            float(row["total_reactions"]),
-            float(row["total_reposts"]),
-            float(row["total_collects"]),
-            float(row["total_comments"]),
-            float(row["total_followers"]),
-            float(row["total_following"]),
-            float(row["days_active"])
-        ])
+        onchain_features_raw.append(
+            [
+                float(row["trust_score"]),
+                float(row["total_tips"]),
+                float(row["total_posts"]),
+                float(row["total_quotes"]),
+                float(row["total_reacted"]),
+                float(row["total_reactions"]),
+                float(row["total_reposts"]),
+                float(row["total_collects"]),
+                float(row["total_comments"]),
+                float(row["total_followers"]),
+                float(row["total_following"]),
+                float(row["days_active"]),
+            ]
+        )
 
     # Encode văn bản (Expensive step)
     tensor_text = torch.tensor(model.encode(text_data), dtype=torch.float)
@@ -361,7 +407,9 @@ def build_pyg_graph(df_nodes, df_edges):
     edge_sources = [id_to_idx[e["source"]] for e in edges_list]
     edge_targets = [id_to_idx[e["target"]] for e in edges_list]
     edge_index = torch.tensor([edge_sources, edge_targets], dtype=torch.long)
-    edge_attr = torch.tensor([e["weight"] for e in edges_list], dtype=torch.float).view(-1, 1)
+    edge_attr = torch.tensor([e["weight"] for e in edges_list], dtype=torch.float).view(
+        -1, 1
+    )
 
     data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
 
@@ -377,14 +425,15 @@ def train_gae_pipeline(payload: dict) -> dict:
     import torch.nn.functional as F
     from torch_geometric.nn import GATConv, GAE
     from sklearn.cluster import KMeans
-    import numpy as np
     import pandas as pd
 
     class GATEncoder(torch.nn.Module):
         def __init__(self, in_channels, out_channels=16):
             super().__init__()
             self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
-            self.conv2 = GATConv(32 * 4, out_channels, heads=1, concat=False, dropout=0.1, edge_dim=1)
+            self.conv2 = GATConv(
+                32 * 4, out_channels, heads=1, concat=False, dropout=0.1, edge_dim=1
+            )
 
         def forward(self, x, edge_index, edge_attr):
             x = self.conv1(x, edge_index, edge_attr=edge_attr)
@@ -415,7 +464,7 @@ def train_gae_pipeline(payload: dict) -> dict:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Smart Early Stopping variables
-    best_loss = float('inf')
+    best_loss = float("inf")
     patience_counter = 0
     best_weights = None
 
@@ -451,12 +500,15 @@ def train_gae_pipeline(payload: dict) -> dict:
 
     model.eval()
     with torch.no_grad():
-        node_embeddings = model.encode(data.x, data.edge_index, data.edge_attr).cpu().numpy()
+        node_embeddings = (
+            model.encode(data.x, data.edge_index, data.edge_attr).cpu().numpy()
+        )
 
     # 5) KMeans & Heuristics (Cluster-level Scoring)
     num_nodes = data.num_nodes
     if num_nodes > 0:
         import math
+
         # Apply interpolation formula based on 300-node benchmark
         calculated_k = int(21 * math.sqrt(num_nodes / 300.0))
         # Ensure K is at least 1, and no greater than the total number of nodes
@@ -469,9 +521,10 @@ def train_gae_pipeline(payload: dict) -> dict:
 
     # Step 1: Map Nodes to Clusters
     pid_to_cluster = {pid: cluster_ids[i] for i, pid in enumerate(profile_ids)}
-    
+
     # Step 2: Filter Internal Edges
     from collections import defaultdict
+
     cluster_internal_edges = defaultdict(list)
     for e in edges_list:
         src_cluster = pid_to_cluster.get(e["source"])
@@ -481,40 +534,46 @@ def train_gae_pipeline(payload: dict) -> dict:
 
     # Step 3 & 4: Calculate Cluster Statistics & Risk Scoring
     cluster_stats = {}
-    df_nodes['created_dt'] = pd.to_datetime(df_nodes['created_on'], utc=True)
-    
+    df_nodes["created_dt"] = pd.to_datetime(df_nodes["created_on"], utc=True)
+
     for c_id in range(n_clusters):
         # Nodes in this cluster
         c_nodes_indices = [i for i, cid in enumerate(cluster_ids) if cid == c_id]
         c_pids = [profile_ids[i] for i in c_nodes_indices]
-        c_df = df_nodes[df_nodes['profile_id'].isin(c_pids)]
-        
+        c_df = df_nodes[df_nodes["profile_id"].isin(c_pids)]
+
         size = len(c_nodes_indices)
         internal_edges = cluster_internal_edges[c_id]
-        
+
         # Tính intensity percentage (dựa trên tổng WEIGHT, không phải count)
         total_weight = sum(e["weight"] for e in internal_edges) or 1.0
 
-        co_owner_weight = sum(e["weight"] for e in internal_edges 
-                            if e["type"] == "CO-OWNER")
-        similarity_weight = sum(e["weight"] for e in internal_edges 
-                                if e["type"] in ["SIM_BIO","FUZZY_HANDLE",
-                                                "CLOSE_CREATION_TIME"])
-        social_weight = sum(e["weight"] for e in internal_edges 
-                            if e["type"] in ["FOLLOW","COMMENT","QUOTE",
-                                            "UPVOTE","COLLECT","TIP"])
-        fuzzy_weight = sum(e["weight"] for e in internal_edges 
-                        if e["type"] == "FUZZY_HANDLE")
+        co_owner_weight = sum(
+            e["weight"] for e in internal_edges if e["type"] == "CO-OWNER"
+        )
+        similarity_weight = sum(
+            e["weight"]
+            for e in internal_edges
+            if e["type"] in ["SIM_BIO", "FUZZY_HANDLE", "CLOSE_CREATION_TIME"]
+        )
+        social_weight = sum(
+            e["weight"]
+            for e in internal_edges
+            if e["type"] in ["FOLLOW", "COMMENT", "QUOTE", "UPVOTE", "COLLECT", "TIP"]
+        )
+        fuzzy_weight = sum(
+            e["weight"] for e in internal_edges if e["type"] == "FUZZY_HANDLE"
+        )
 
         pct_co_owner = co_owner_weight / total_weight
         pct_similarity = similarity_weight / total_weight
         pct_social = social_weight / total_weight
         pct_fuzzy = fuzzy_weight / total_weight
 
-        avg_trust = c_df['trust_score'].mean() if not c_df.empty else 0
+        avg_trust = c_df["trust_score"].mean() if not c_df.empty else 0
 
         if size > 1:
-            std_creation_hours = c_df['created_dt'].std().total_seconds() / 3600.0
+            std_creation_hours = c_df["created_dt"].std().total_seconds() / 3600.0
         else:
             std_creation_hours = 0
 
@@ -522,11 +581,11 @@ def train_gae_pipeline(payload: dict) -> dict:
         score = 0
         reasons = []
 
-        if pct_co_owner > 0.15:           # Thay từ 0.10
-            score += 40                    # Thay từ 50
+        if pct_co_owner > 0.15:  # Thay từ 0.10
+            score += 40  # Thay từ 50
             reasons.append(f"High Co-owner intensity ({pct_co_owner:.1%}) +40")
 
-        if pct_similarity >= 0.50:        # Thay từ 0.60
+        if pct_similarity >= 0.50:  # Thay từ 0.60
             score += 30
             reasons.append(f"High Similarity intensity ({pct_similarity:.1%}) +30")
 
@@ -538,30 +597,34 @@ def train_gae_pipeline(payload: dict) -> dict:
             score += 15
             reasons.append(f"Fuzzy Handle pattern ({pct_fuzzy:.1%}) +15")
 
-        if pct_social <= 0.15:            # Thay từ 0.20
+        if pct_social <= 0.15:  # Thay từ 0.20
             score += 10
             reasons.append(f"Low Social intensity ({pct_social:.1%}) +10")
 
         if avg_trust <= 5:
             score += 20
             reasons.append(f"Very Low Trust ({avg_trust:.2f}) +20")
-        elif avg_trust <= 10:             # Thay từ 8
+        elif avg_trust <= 10:  # Thay từ 8
             score += 10
             reasons.append(f"Low Trust ({avg_trust:.2f}) +10")
 
         score = min(100, score)
         risk_score = score / 100.0
-        
+
         # Fuzzy Labeling
-        if score < 20: label = "0_BENIGN"
-        elif score <= 50: label = "1_LOW_RISK"
-        elif score < 80: label = "2_HIGH_RISK"
-        else: label = "3_MALICIOUS"
-        
+        if score < 20:
+            label = "0_BENIGN"
+        elif score <= 50:
+            label = "1_LOW_RISK"
+        elif score < 80:
+            label = "2_HIGH_RISK"
+        else:
+            label = "3_MALICIOUS"
+
         cluster_stats[c_id] = {
             "label": sanitize_label(label),
             "risk_score": risk_score,
-            "reasons": reasons
+            "reasons": reasons,
         }
 
     # 6) Format
@@ -570,31 +633,55 @@ def train_gae_pipeline(payload: dict) -> dict:
         node_row = df_nodes[df_nodes["profile_id"] == pid].iloc[0]
         c_id = cluster_ids[i]
         c_info = cluster_stats[c_id]
-        
-        nodes.append({
-            "id": pid,
-            "risk_label": c_info["label"],
-            "cluster_id": int(c_id),
-            "risk_score": float(c_info["risk_score"]),
-            "attributes": {
-                "handle": node_row["handle"] or "unknown",
-                "trust_score": float(node_row["trust_score"]) if pd.notnull(node_row["trust_score"]) else 0.0,
-                "follower_count": int(node_row["total_followers"]) if pd.notnull(node_row["total_followers"]) else 0,
-                "post_count": int(node_row["total_posts"]) if pd.notnull(node_row["total_posts"]) else 0,
-                "picture_url": str(node_row["picture_url"]) if pd.notnull(node_row["picture_url"]) else None,
-                "owned_by": str(node_row["owned_by"]) if pd.notnull(node_row["owned_by"]) else None,
-                "reasons": c_info["reasons"]
+
+        nodes.append(
+            {
+                "id": pid,
+                "risk_label": c_info["label"],
+                "cluster_id": int(c_id),
+                "risk_score": float(c_info["risk_score"]),
+                "attributes": {
+                    "handle": node_row["handle"] or "unknown",
+                    "trust_score": (
+                        float(node_row["trust_score"])
+                        if pd.notnull(node_row["trust_score"])
+                        else 0.0
+                    ),
+                    "follower_count": (
+                        int(node_row["total_followers"])
+                        if pd.notnull(node_row["total_followers"])
+                        else 0
+                    ),
+                    "post_count": (
+                        int(node_row["total_posts"])
+                        if pd.notnull(node_row["total_posts"])
+                        else 0
+                    ),
+                    "picture_url": (
+                        str(node_row["picture_url"])
+                        if pd.notnull(node_row["picture_url"])
+                        else None
+                    ),
+                    "owned_by": (
+                        str(node_row["owned_by"])
+                        if pd.notnull(node_row["owned_by"])
+                        else None
+                    ),
+                    "reasons": c_info["reasons"],
+                },
             }
-        })
+        )
 
     links = []
     for e in edges_list:
-        links.append({
-            "source": e["source"],
-            "target": e["target"],
-            "edge_type": e["type"],
-            "weight": float(e["weight"])
-        })
+        links.append(
+            {
+                "source": e["source"],
+                "target": e["target"],
+                "edge_type": e["type"],
+                "weight": float(e["weight"]),
+            }
+        )
 
     return {
         "cluster_count": int(n_clusters),
@@ -603,16 +690,17 @@ def train_gae_pipeline(payload: dict) -> dict:
         "nodes": nodes,
         "links": links,
         "start_date": start_date,
-        "end_date": end_date
+        "end_date": end_date,
     }
+
 
 @app.function(
     image=image,
     gpu="T4",
-    memory=4096,           # Cấp 4GB RAM cho việc chứa Graph và Model AI
+    memory=4096,  # Cấp 4GB RAM cho việc chứa Graph và Model AI
     # keep_warm=1,
-    startup_timeout=300,   # Chống timeout khi load file Backbone và Models nặng
-    secrets=[modal.Secret.from_name("gcp-sybil-secret")]
+    startup_timeout=300,  # Chống timeout khi load file Backbone và Models nặng
+    secrets=[modal.Secret.from_name("gcp-sybil-secret")],
 )
 @modal.asgi_app()
 def fastapi_endpoint():
@@ -621,6 +709,8 @@ def fastapi_endpoint():
     Khởi chạy ứng dụng FastAPI, tự động kích hoạt lifespan để nạp Graph và AI Models.
     """
     from app.main import app as web_app
+
     return web_app
+
 
 # Deploy: modal deploy modal_worker/app.py

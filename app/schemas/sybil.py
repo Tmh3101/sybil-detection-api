@@ -51,4 +51,3 @@ class DiscoveryStatusResponse(BaseModel):
     current_step: str = "QUEUED"
     graph_data: Optional[GraphDataSchema] = None
     message: Optional[str] = None
-

@@ -1,0 +1,40 @@
+[project]
+name = "sybil-detection-api"
+version = "0.1.0"
+description = "A high-performance backend and serverless GPU worker suite for detecting Sybil account clusters in Web3 social graphs."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pydantic-settings",
+    "modal",
+    "networkx",
+    "scikit-learn",
+    "pandas",
+    "torch",
+    "torch-geometric",
+    "sentence-transformers",
+    "joblib",
+    "google-cloud-bigquery",
+    "db-dtypes",
+    "numpy",
+    "transformers"
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "ruff"
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = 'docs/colab-code/.*'
+
+[tool.isort]
+profile = "black"
+line_length = 88

@@ -18,4 +18,3 @@ def get_sybil_service() -> SybilService:
 
 
 SybilServiceDependency = Depends(get_sybil_service)
-

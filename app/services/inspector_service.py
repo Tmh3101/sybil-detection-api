@@ -7,10 +7,11 @@ import networkx as nx
 
 logger = logging.getLogger(__name__)
 
+
 async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
     """
     Load the PyTorch Geometric graph and CSV metadata into a NetworkX MultiDiGraph.
-    
+
     This function:
     1. Loads the .pt file (PyG Data object) and the .csv metadata file.
     2. Validates that the number of nodes matches.
@@ -18,7 +19,9 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
     4. Populates a NetworkX MultiDiGraph with nodes (and their attributes) and edges.
     """
     if not os.path.exists(pt_path) or not os.path.exists(meta_path):
-        logger.warning(f"Data files not found: {pt_path} or {meta_path}. Returning empty graph.")
+        logger.warning(
+            f"Data files not found: {pt_path} or {meta_path}. Returning empty graph."
+        )
         return nx.MultiDiGraph()
 
     try:
@@ -31,22 +34,26 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
             # and map_location='cpu' as instructed.
             data = torch.load(pt_path, map_location="cpu", weights_only=False)
             df_meta = pd.read_csv(meta_path)
-            
+
             bio_embs = {}
             if os.path.exists(emb_path):
                 logger.info(f"Loading pre-computed bio embeddings from {emb_path}...")
                 bio_embs = torch.load(emb_path, map_location="cpu", weights_only=False)
             else:
-                logger.warning(f"Bio embeddings file not found at {emb_path}. Proceeding without it.")
+                logger.warning(
+                    f"Bio embeddings file not found at {emb_path}. Proceeding without it."
+                )
 
             return data, df_meta, bio_embs
 
         data, df_meta, bio_embs = await asyncio.to_thread(sync_load)
 
         # Basic validation
-        num_nodes_pt = data.num_nodes if hasattr(data, 'num_nodes') else data.x.size(0)
+        num_nodes_pt = data.num_nodes if hasattr(data, "num_nodes") else data.x.size(0)
         if num_nodes_pt != len(df_meta):
-            logger.error(f"Mismatch: num_nodes ({num_nodes_pt}) != len(df_meta) ({len(df_meta)})")
+            logger.error(
+                f"Mismatch: num_nodes ({num_nodes_pt}) != len(df_meta) ({len(df_meta)})"
+            )
             return nx.MultiDiGraph()
 
         G = nx.MultiDiGraph()
@@ -55,7 +62,7 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
         # Expected columns in metadata: profile_id, handle, picture_url, owned_by
         # Using profile_id as the node key
         logger.info(f"Adding {len(df_meta)} nodes to Backbone...")
-        
+
         # Extract labels from PyG data if available (data.y)
         labels = []
         if hasattr(data, "y") and data.y is not None:
@@ -86,7 +93,7 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 total_comments=row.get("total_comments", 0),
                 total_followers=row.get("total_followers", 0),
                 total_following=row.get("total_following", 0),
-                label=int(labels[i]) if i < len(labels) else 0
+                label=int(labels[i]) if i < len(labels) else 0,
             )
 
         # Add Edges
@@ -95,10 +102,18 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
             logger.info(f"Adding {data.edge_index.size(1)} edges to Backbone...")
             source_indices = data.edge_index[0].tolist()
             target_indices = data.edge_index[1].tolist()
-            
+
             # Safely extract and flatten weights and types
-            weights_list = data.edge_attr.view(-1).tolist() if hasattr(data, "edge_attr") and data.edge_attr is not None else None
-            types_list = data.edge_type.view(-1).tolist() if hasattr(data, "edge_type") and data.edge_type is not None else None
+            weights_list = (
+                data.edge_attr.view(-1).tolist()
+                if hasattr(data, "edge_attr") and data.edge_attr is not None
+                else None
+            )
+            types_list = (
+                data.edge_type.view(-1).tolist()
+                if hasattr(data, "edge_type") and data.edge_type is not None
+                else None
+            )
 
             # Official mapping from the system's WEIGHTS configuration
             EDGE_TYPE_MAP = {
@@ -112,36 +127,37 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 7: "CO-OWNER",
                 8: "FUZZY_HANDLE",
                 9: "SIM_BIO",
-                10: "CLOSE_CREATION_TIME"
+                10: "CLOSE_CREATION_TIME",
             }
-            
+
             # Map indices to profile_ids
             profile_ids = df_meta["profile_id"].astype(str).tolist()
-            
+
             edges = []
             for i, (src_idx, tgt_idx) in enumerate(zip(source_indices, target_indices)):
                 try:
                     src_pid = profile_ids[src_idx]
                     tgt_pid = profile_ids[tgt_idx]
-                    
+
                     # Resolve Weight
-                    w = weights_list[i] if weights_list and i < len(weights_list) else 1.0
+                    w = (
+                        weights_list[i]
+                        if weights_list and i < len(weights_list)
+                        else 1.0
+                    )
 
                     # Resolve Type
                     t_int = types_list[i] if types_list and i < len(types_list) else -1
                     t_str = EDGE_TYPE_MAP.get(t_int, "UNKNOWN")
 
                     # Build attribute dictionary
-                    edge_data = {
-                        "weight": float(w),
-                        "type": t_str
-                    }
+                    edge_data = {"weight": float(w), "type": t_str}
 
                     edges.append((src_pid, tgt_pid, edge_data))
                 except IndexError:
                     # Log but continue if indices are slightly out of sync
                     continue
-            
+
             G.add_edges_from(edges)
         else:
             logger.warning("No edge_index found in the PyG data object.")

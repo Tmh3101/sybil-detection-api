@@ -9,18 +9,24 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class GATClassifier(nn.Module):
     """
     GAT Feature Extractor.
     Input: [N, 396] -> [N, 16] embeddings.
     """
-    def __init__(self, in_channels: int = 396, embedding_dim: int = 16, num_classes: int = 4):
+
+    def __init__(
+        self, in_channels: int = 396, embedding_dim: int = 16, num_classes: int = 4
+    ):
         super().__init__()
         # Layer 1: Multi-head attention (4 heads, 32 output dim per head)
         self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
 
         # Layer 2: Final embedding layer (1 head, 16 output dim)
-        self.conv2 = GATConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1)
+        self.conv2 = GATConv(
+            32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1
+        )
 
         # Classification head (kept for state_dict compatibility but not used in inference)
         self.classifier = nn.Linear(embedding_dim, num_classes)
@@ -29,19 +35,24 @@ class GATClassifier(nn.Module):
         """
         Forward pass returns 16-dim embedding and attention weights from both layers.
         """
-        x, (idx1, w1) = self.conv1(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
+        x, (idx1, w1) = self.conv1(
+            x, edge_index, edge_attr=edge_attr, return_attention_weights=True
+        )
         x = F.elu(x)
         x = F.dropout(x, p=0.1, training=self.training)
 
-        x, (idx2, w2) = self.conv2(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
+        x, (idx2, w2) = self.conv2(
+            x, edge_index, edge_attr=edge_attr, return_attention_weights=True
+        )
         return x, (idx1, w1), (idx2, w2)
+
 
 def load_models(data_dir: str = "data"):
     """
     Load all 5 components required for Hybrid AI Inference.
     """
     models = {}
-    
+
     # 1. Feature Scaler (Numeric Stats)
     scaler_path = os.path.join(data_dir, "scaler.bin")
     if os.path.exists(scaler_path):
@@ -53,7 +64,7 @@ def load_models(data_dir: str = "data"):
 
     # 2. NLP Model (SentenceTransformer)
     try:
-        models["nlp_model"] = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
+        models["nlp_model"] = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
         logger.info("Loaded nlp_model (all-MiniLM-L6-v2)")
     except Exception as e:
         logger.error(f"Failed to load nlp_model: {e}")
