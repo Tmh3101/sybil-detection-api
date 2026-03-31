@@ -16,8 +16,8 @@ Nhiệm vụ của bạn hiện tại là thực thi **Phase 3, Phase 4 và Phas
 
 - Bên trong file `modal_worker/app.py`, hãy định nghĩa class `GATEncoder(torch.nn.Module)` (Có thể đặt ngay bên trên hàm `train_gae_pipeline` hoặc bên trong khối lazy import).
 - Tham chiếu kiến trúc từ `fullflow.py`:
-  - Lớp 1: `GATConv(in_channels, 32, heads=4, dropout=0.3, concat=True)`
-  - Lớp 2: `GATConv(32 * 4, 16, heads=1, concat=False, dropout=0.3)`
+  - Lớp 1: `GATConv(in_channels, 32, heads=4, dropout=0.1, concat=True)`
+  - Lớp 2: `GATConv(32 * 4, 16, heads=1, concat=False, dropout=0.1)`
 - Trong hàm `train_gae_pipeline`, sau khi có đối tượng `data` từ `build_pyg_graph`:
   - Khởi tạo `encoder = GATEncoder(in_channels=data.num_features)`
   - Khởi tạo `model = GAE(encoder)` và đẩy model/data lên device (GPU `cuda` nếu có, ngược lại `cpu`).

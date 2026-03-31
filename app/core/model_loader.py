@@ -17,10 +17,10 @@ class GATClassifier(nn.Module):
     def __init__(self, in_channels: int = 396, embedding_dim: int = 16, num_classes: int = 4):
         super().__init__()
         # Layer 1: Multi-head attention (4 heads, 32 output dim per head)
-        self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.3, edge_dim=1)
+        self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
 
         # Layer 2: Final embedding layer (1 head, 16 output dim)
-        self.conv2 = GATConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.3, edge_dim=1)
+        self.conv2 = GATConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1)
 
         # Classification head (kept for state_dict compatibility but not used in inference)
         self.classifier = nn.Linear(embedding_dim, num_classes)
@@ -31,7 +31,7 @@ class GATClassifier(nn.Module):
         """
         x, (idx1, w1) = self.conv1(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x, (idx2, w2) = self.conv2(x, edge_index, edge_attr=edge_attr, return_attention_weights=True)
         return x, (idx1, w1), (idx2, w2)

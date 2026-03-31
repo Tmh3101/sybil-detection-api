@@ -347,13 +347,13 @@ def train_gae_pipeline(payload: dict) -> dict:
     class GATEncoder(torch.nn.Module):
         def __init__(self, in_channels, out_channels=16):
             super().__init__()
-            self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.3, edge_dim=1)
-            self.conv2 = GATConv(32 * 4, out_channels, heads=1, concat=False, dropout=0.3, edge_dim=1)
+            self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
+            self.conv2 = GATConv(32 * 4, out_channels, heads=1, concat=False, dropout=0.1, edge_dim=1)
 
         def forward(self, x, edge_index, edge_attr):
             x = self.conv1(x, edge_index, edge_attr=edge_attr)
             x = F.elu(x)
-            x = F.dropout(x, p=0.3, training=self.training)
+            x = F.dropout(x, p=0.1, training=self.training)
             x = self.conv2(x, edge_index, edge_attr=edge_attr)
             return x
 

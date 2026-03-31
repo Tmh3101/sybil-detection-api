@@ -428,7 +428,7 @@ class GATEncoder(torch.nn.Module):
             in_channels,
             32,
             heads=4,
-            dropout=0.3,
+            dropout=0.1,
             edge_dim=1  # edge_dim=1: Để model biết có trọng số cạnh 1 chiều
         )
 
@@ -438,14 +438,14 @@ class GATEncoder(torch.nn.Module):
             out_channels,
             heads=1,
             concat=False,
-            dropout=0.3,
+            dropout=0.1,
             edge_dim=1  # edge_dim=1 để tiếp tục sử dụng trọng số cạnh ở tầng này
         )
 
     def forward(self, x, edge_index, edge_attr):
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
         return x
 
@@ -1617,10 +1617,10 @@ class GATClassifier(torch.nn.Module):
     def __init__(self, in_channels, embedding_dim, num_classes=2):
         super().__init__()
         # --- LAYER 1 ---
-        self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.3, edge_dim=1)
+        self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
 
         # --- LAYER 2 ---
-        self.conv2 = GATConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.3, edge_dim=1)
+        self.conv2 = GATConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1)
 
         # --- CLASSIFICATION HEAD ---
         self.classifier = nn.Linear(embedding_dim, num_classes)
@@ -1629,7 +1629,7 @@ class GATClassifier(torch.nn.Module):
         # Trích xuất đặc trưng (Embedding)
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 
@@ -1684,7 +1684,7 @@ class GCNClassifier(torch.nn.Module):
 
         x = self.conv1(x, edge_index, edge_weight=edge_weight)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_weight=edge_weight)
 
@@ -1757,7 +1757,7 @@ class GINEClassifier(torch.nn.Module):
             edge_attr = edge_attr.float()
 
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 
         out = self.classifier(x)
@@ -1826,7 +1826,7 @@ class PNAClassifier(torch.nn.Module):
 
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 
@@ -1874,10 +1874,10 @@ class TransformerClassifier(torch.nn.Module):
     def __init__(self, in_channels, embedding_dim, num_classes=2):
         super().__init__()
         # --- LAYER 1 ---
-        self.conv1 = TransformerConv(in_channels, 32, heads=4, dropout=0.3, edge_dim=1)
+        self.conv1 = TransformerConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
 
         # --- LAYER 2 ---
-        self.conv2 = TransformerConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.3, edge_dim=1)
+        self.conv2 = TransformerConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1)
 
         # --- CLASSIFICATION HEAD ---
         self.classifier = nn.Linear(embedding_dim, num_classes)
@@ -1885,7 +1885,7 @@ class TransformerClassifier(torch.nn.Module):
     def forward(self, x, edge_index, edge_attr):
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 
@@ -2135,10 +2135,10 @@ class GATClassifier(torch.nn.Module):
     def __init__(self, in_channels, embedding_dim, num_classes=2):
         super().__init__()
         # --- LAYER 1 ---
-        self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.3, edge_dim=1)
+        self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
 
         # --- LAYER 2 ---
-        self.conv2 = GATConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.3, edge_dim=1)
+        self.conv2 = GATConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1)
 
         # --- CLASSIFICATION HEAD ---
         self.classifier = nn.Linear(embedding_dim, num_classes)
@@ -2147,7 +2147,7 @@ class GATClassifier(torch.nn.Module):
         # Trích xuất đặc trưng (Embedding)
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 
@@ -2196,7 +2196,7 @@ class GCNClassifier(torch.nn.Module):
 
         x = self.conv1(x, edge_index, edge_weight=edge_weight)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_weight=edge_weight)
 
@@ -2263,7 +2263,7 @@ class GINEClassifier(torch.nn.Module):
             edge_attr = edge_attr.float()
 
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 
         out = self.classifier(x)
@@ -2325,7 +2325,7 @@ class PNAClassifier(torch.nn.Module):
 
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 
@@ -2369,10 +2369,10 @@ class TransformerClassifier(torch.nn.Module):
     def __init__(self, in_channels, embedding_dim, num_classes=2):
         super().__init__()
         # --- LAYER 1 ---
-        self.conv1 = TransformerConv(in_channels, 32, heads=4, dropout=0.3, edge_dim=1)
+        self.conv1 = TransformerConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
 
         # --- LAYER 2 ---
-        self.conv2 = TransformerConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.3, edge_dim=1)
+        self.conv2 = TransformerConv(32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1)
 
         # --- CLASSIFICATION HEAD ---
         self.classifier = nn.Linear(embedding_dim, num_classes)
@@ -2380,7 +2380,7 @@ class TransformerClassifier(torch.nn.Module):
     def forward(self, x, edge_index, edge_attr):
         x = self.conv1(x, edge_index, edge_attr=edge_attr)
         x = F.elu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = F.dropout(x, p=0.1, training=self.training)
 
         x = self.conv2(x, edge_index, edge_attr=edge_attr)
 

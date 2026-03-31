@@ -15,11 +15,18 @@ Hãy thêm hằng số sau vào đầu file `app/services/fallback_service.py` (
 
 ```python
 EDGE_WEIGHTS = {
-    'FOLLOW': 2.0,
-    'UPVOTE': 1.0, 'REACTION': 1.0, 'COMMENT': 2.0,
-    'QUOTE': 2.0, 'MIRROR': 3.0, 'COLLECT': 4.0,
-    'CO-OWNER': 5.0,
-    'SAME_AVATAR': 3.0, 'FUZZY_HANDLE': 2.0, 'SIM_BIO': 3.0, 'CLOSE_CREATION_TIME': 2.0
+      // Follow Layer (có hướng)
+      'FOLLOW': 2.0,
+
+      // Interact Layer (có hướng)
+      'UPVOTE': 1.0, 'REACTION': 1.0, 'COMMENT': 2.0,
+      'QUOTE': 2.0, 'MIRROR': 3.0, 'COLLECT': 4.0,
+
+      // Co-Owner Layer (vô hướng)
+      'CO-OWNER': 5.0,
+
+      // Similarity Layer (vô hướng)
+      'SAME_AVATAR': 3.0, 'FUZZY_HANDLE': 2.0, 'SIM_BIO': 3.0, 'CLOSE_CREATION_TIME': 2.0
 }
 ```
 
