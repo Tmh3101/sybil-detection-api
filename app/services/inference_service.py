@@ -149,7 +149,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             # Use weight from data if present, else lookup from EDGE_WEIGHTS
             weight = data.get("weight")
             if weight is None:
-                e_type = data.get("type", "UNKNOWN")
+                e_type = data.get("edge_type", "UNKNOWN")
                 weight = EDGE_WEIGHTS.get(e_type, 1.0)
 
             weights.append(float(weight))
@@ -237,7 +237,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             "FUZZY_HANDLE",
             "CLOSE_CREATION_TIME",
         }
-        e_type = data.get("type", "UNKNOWN")
+        e_type = data.get("edge_type", "UNKNOWN")
         if e_type in RISK_EDGE_TYPES:
             risk_edges.append(e_type)
 

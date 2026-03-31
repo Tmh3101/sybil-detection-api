@@ -59,7 +59,7 @@ async def get_overview(request: Request):
     # Đếm theo layer
     layer_counts: dict = defaultdict(int)
     for u, v, data in G.edges(data=True):
-        e_type = data.get("type", "UNKNOWN")
+        e_type = data.get("edge_type", "UNKNOWN")
         layer = EDGE_LAYER_MAP.get(e_type, "Other")
         layer_counts[layer] += 1
 

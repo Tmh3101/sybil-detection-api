@@ -555,7 +555,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         try:
             edge_counts = {}
             for u, v, data in G.edges(node_data["profile_id"], data=True):
-                e_type = data.get("type", "UNKNOWN")
+                e_type = data.get("edge_type", "UNKNOWN")
                 edge_counts[e_type] = edge_counts.get(e_type, 0) + 1
 
             # Ánh xạ Edge Type sang Layer

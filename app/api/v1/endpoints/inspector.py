@@ -143,7 +143,7 @@ async def get_profile_details(profile_id: str, request: Request):
                 LocalGraphLink(
                     source=u,
                     target=v,
-                    edge_type=data.get("type", "UNKNOWN"),
+                    edge_type=data.get("edge_type", "UNKNOWN"),
                     weight=safe_float(data.get("weight"), 1.0),
                     gat_attention=safe_float(data.get("gat_attention"), 0.0),
                 )
