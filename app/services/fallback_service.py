@@ -7,19 +7,43 @@ import pandas as pd
 import networkx as nx
 import torch
 import difflib
+import math
 from datetime import datetime
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
-EDGE_WEIGHTS = {
-    'FOLLOW': 2.0,
-    'UPVOTE': 1.0, 'REACTION': 1.0, 'COMMENT': 2.0,
-    'QUOTE': 2.0, 'MIRROR': 3.0, 'COLLECT': 4.0,
-    'CO-OWNER': 5.0,
-    'SAME_AVATAR': 3.0, 'FUZZY_HANDLE': 2.0, 'SIM_BIO': 3.0, 'CLOSE_CREATION_TIME': 2.0
+logger = logging.getLogger(__name__)
+
+BASE_WEIGHTS = {
+    # Tầng Follow
+    'FOLLOW': 1.0,
+    # Tầng Interact
+    'UPVOTE': 1.0, 'REACTION': 1.0,
+    'COMMENT': 2.0, 'QUOTE': 2.0, 'MIRROR': 3.0,
+    'COLLECT': 4.0, 'TIP': 4.0,
+    # Tầng Co-Owner (undirected)
+    'CO-OWNER': 10.0,
+    # Tầng Similarity (undirected)
+    'FUZZY_HANDLE': 5.0, 'SIM_BIO': 5.0, 'CLOSE_CREATION_TIME': 5.0,
 }
 
-logger = logging.getLogger(__name__)
+# REV edges: chiều ngược của directed layers, weight = base * 0.5
+REV_WEIGHTS = {
+    k + '_REV': v * 0.5
+    for k, v in BASE_WEIGHTS.items()
+    if k in {'FOLLOW','UPVOTE','REACTION','COMMENT','QUOTE','MIRROR','COLLECT','TIP'}
+}
+
+EDGE_WEIGHTS = {**BASE_WEIGHTS, **REV_WEIGHTS}
+
+DIRECTED_EDGE_TYPES = {
+    'FOLLOW','UPVOTE','REACTION','COMMENT','QUOTE','MIRROR','COLLECT','TIP'
+}
+
+def compute_log_weight(edge_type: str, n_interactions: int = 1) -> float:
+    """W_final = W_base * (1 + log10(N))"""
+    base = BASE_WEIGHTS.get(edge_type, 1.0)
+    return base * (1 + math.log10(max(1, n_interactions)))
 
 # Global variable for the NLP model (Singleton)
 _sentence_model = None
@@ -288,69 +312,63 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 neighbor = tgt if src == profile_id_clean else src
                 if neighbor in G:
                     G.add_edge(src, tgt, type=edge_type, weight=weight)
+                    if edge_type in DIRECTED_EDGE_TYPES:
+                        rev_type = edge_type + '_REV'
+                        rev_weight = weight * 0.5
+                        G.add_edge(tgt, src, type=rev_type, weight=rev_weight)
+                    
                     attached_edges += 1
-                    # logger.info(f"   -> [LINKED] Nối cạnh {edge_type} ({src} -> {tgt}) với node trong RAM: {neighbor}")
                 else:
                     ignored_edges += 1
             
             logger.info(f"[PHYSICAL EDGES SUMMARY] Đã nối: {attached_edges} edges. Bỏ qua (ngoài RAM): {ignored_edges} edges.")
 
         # 3. Graph Enrichment (Logical - Undirected)
-        new_owned_by = node_data.get("owned_by")
         new_pic = node_data.get("picture_url")
         new_handle = str(node_data.get("handle", ""))
         new_bio = node_data.get("bio")
         new_created_on = node_data.get("created_on")
-        
-        co_owner_count = 0
-        same_avatar_count = 0
-        fuzzy_handle_count = 0
-        close_time_count = 0
 
+        # --- Tính điểm vi phạm Similarity (Constraint 2/3) ---
         for n_id, attrs in G.nodes(data=True):
             if n_id == node_data["profile_id"]:
                 continue
             
-            # 3.1 CO-OWNER
-            n_owned_by = attrs.get("owned_by")
-            if new_owned_by and n_owned_by and str(new_owned_by).lower() != "unknown" and str(new_owned_by).lower() == str(n_owned_by).lower():
-                G.add_edge(node_data["profile_id"], n_id, type="CO-OWNER", weight=EDGE_WEIGHTS["CO-OWNER"])
-                G.add_edge(n_id, node_data["profile_id"], type="CO-OWNER", weight=EDGE_WEIGHTS["CO-OWNER"])
-                co_owner_count += 1
-                logger.info(f"   -> [CO-OWNER] Nối với {n_id}")
-
-            # 3.2 SAME_AVATAR
-            n_pic = attrs.get("picture_url")
-            if new_pic and n_pic and len(new_pic) > 5 and new_pic == n_pic:
-                G.add_edge(node_data["profile_id"], n_id, type="SAME_AVATAR", weight=EDGE_WEIGHTS["SAME_AVATAR"])
-                G.add_edge(n_id, node_data["profile_id"], type="SAME_AVATAR", weight=EDGE_WEIGHTS["SAME_AVATAR"])
-                same_avatar_count += 1
-
-            # 3.3 FUZZY_HANDLE
+            violations = []  # Danh sách các tiêu chí bị vi phạm
+            
+            # Tiêu chí 2: FUZZY_HANDLE
             n_handle = str(attrs.get("handle", ""))
             if len(new_handle) > 3 and len(n_handle) > 3:
                 ratio = difflib.SequenceMatcher(None, new_handle, n_handle).ratio()
                 if ratio >= 0.85:
-                    G.add_edge(node_data["profile_id"], n_id, type="FUZZY_HANDLE", weight=EDGE_WEIGHTS["FUZZY_HANDLE"])
-                    G.add_edge(n_id, node_data["profile_id"], type="FUZZY_HANDLE", weight=EDGE_WEIGHTS["FUZZY_HANDLE"])
-                    fuzzy_handle_count += 1
-
-            # 3.4 CLOSE_CREATION_TIME
+                    violations.append("FUZZY_HANDLE")
+            
+            # Tiêu chí 3: CLOSE_CREATION_TIME
             n_created_on = attrs.get("created_on")
             if new_created_on and n_created_on:
                 try:
-                    # BQ returns datetime objects via pandas/db-dtypes, but if not, parse them
-                    t1 = new_created_on if isinstance(new_created_on, datetime) else pd.to_datetime(new_created_on)
-                    t2 = n_created_on if isinstance(n_created_on, datetime) else pd.to_datetime(n_created_on)
+                    t1 = new_created_on if isinstance(new_created_on, datetime) \
+                        else pd.to_datetime(new_created_on)
+                    t2 = n_created_on if isinstance(n_created_on, datetime) \
+                        else pd.to_datetime(n_created_on)
                     if abs((t1 - t2).total_seconds()) <= 3600:
-                        G.add_edge(node_data["profile_id"], n_id, type="CLOSE_CREATION_TIME", weight=EDGE_WEIGHTS["CLOSE_CREATION_TIME"])
-                        G.add_edge(n_id, node_data["profile_id"], type="CLOSE_CREATION_TIME", weight=EDGE_WEIGHTS["CLOSE_CREATION_TIME"])
-                        close_time_count += 1
+                        violations.append("CLOSE_CREATION_TIME")
                 except Exception as e:
                     logger.warning(f"Failed to compare creation times: {e}")
-
-
-        logger.info(f"[LOGICAL EDGES SUMMARY] CO-OWNER: {co_owner_count}, SAME_AVATAR: {same_avatar_count}, FUZZY_HANDLE: {fuzzy_handle_count}, CLOSE_CREATION_TIME: {close_time_count}")
+            
+            # Chỉ tạo SIMILARITY edge nếu vi phạm >= 2/3 tiêu chí
+            if len(violations) >= 2:
+                sim_weight = BASE_WEIGHTS["FUZZY_HANDLE"]  # = 5.0 cho tất cả similarity
+                # Lưu chi tiết violations vào metadata edge
+                G.add_edge(node_data["profile_id"], n_id,
+                        type="SIMILARITY",
+                        weight=sim_weight,
+                        violations=violations)
+                G.add_edge(n_id, node_data["profile_id"],
+                        type="SIMILARITY",
+                        weight=sim_weight,
+                        violations=violations)
+                logger.info(f"   -> [SIMILARITY 2/3] Nối với {n_id} ({violations})")
 
         # 3.5 SIMILARITY edges (NLP Bio) - Optimized with Pre-computed Embeddings
         if new_bio and isinstance(new_bio, str) and len(new_bio.strip()) > 5:
@@ -412,7 +430,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 'COMMENT': 'Interact Layer (Directed)', 'QUOTE': 'Interact Layer (Directed)',
                 'MIRROR': 'Interact Layer (Directed)', 'COLLECT': 'Interact Layer (Directed)',
                 'CO-OWNER': 'Co-Owner Layer (Undirected)',
-                'SAME_AVATAR': 'Similarity Layer (Undirected)', 'FUZZY_HANDLE': 'Similarity Layer (Undirected)',
+                'FUZZY_HANDLE': 'Similarity Layer (Undirected)',
                 'SIM_BIO': 'Similarity Layer (Undirected)', 'CLOSE_CREATION_TIME': 'Similarity Layer (Undirected)'
             }
 

@@ -210,8 +210,11 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
         subgraph[u][v][0]['gat_attention'] = gat_attention
         
         # Risk pattern detection
-        e_type = data.get("type", "")
-        if e_type in ["CO-OWNER", "SIM_BIO", "SAME_AVATAR", "FUZZY_HANDLE"]:
+        RISK_EDGE_TYPES = {
+            "CO-OWNER", "SIMILARITY",
+            "SIM_BIO", "FUZZY_HANDLE", "CLOSE_CREATION_TIME"
+        }
+        if e_type in RISK_EDGE_TYPES:
             risk_edges.append(e_type)
     
     # Use confidence (highest prob) for reasoning display
@@ -233,20 +236,26 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     }
 
 def generate_reasoning(pred_class: int, risk_edges: list, sybil_prob: float) -> list:
-    """
-    Generate a human-readable explanation for the AI's decision as a list of points.
-    """
     reasons = []
     
     if pred_class >= 2:
-        reasons.append(f"AI model detected strong Sybil-like behavior (Confidence: {sybil_prob*100:.1f}%).")
+        reasons.append(
+            f"AI model detected strong Sybil-like behavior "
+            f"(Confidence: {sybil_prob*100:.1f}%)."
+        )
     elif pred_class == 1:
-        reasons.append(f"AI model identified minor suspicious patterns (Confidence: {sybil_prob*100:.1f}%).")
-        
+        reasons.append(
+            f"AI model identified suspicious patterns "
+            f"(Confidence: {sybil_prob*100:.1f}%)."
+        )
+    
+    if risk_edges:
+        from collections import Counter
+        counts = Counter(risk_edges)
+        detail = ", ".join(f"{v}x {k}" for k, v in counts.most_common(3))
+        reasons.append(f"Risk-associated connections: {detail}.")
+    
     if not reasons:
-        if pred_class == 0:
-            return ["No significant Sybil patterns detected. Account behavior appears consistent with organic users."]
-        else:
-            return ["Account shows some unusual activity, but no definitive Sybil indicators were found."]
-            
+        return ["No significant Sybil patterns detected."]
+    
     return reasons

@@ -346,12 +346,10 @@ Phase này gồm 2 tầng: **(i) clustering không giám sát** và **(ii) gán 
 
 #### 3.2.1. K-Means Clustering
 
-- Dùng embeddings `embeddings` (tạo từ GAE) để chạy:
-  - `labels = KMeans(n_clusters=K, random_state=42).fit_predict(embeddings)`
-- Trong code, có bước thử K trong `K_range = 10..30` để đánh giá:
-  - silhouette score,
-  - Davies-Bouldin index.
-- Cuối cùng chọn một số cụm cụ thể (ví dụ `NUM_CLUSTERS = 29`).
+- Dùng embeddings `embeddings` (tạo từ GAE) để chạy clustering.
+- **Dynamic K Calculation:** Số lượng cụm (K) không còn cố định mà được tính toán động dựa trên quy mô đồ thị theo công thức:
+  $K = 21 \times \sqrt{\frac{N_{nodes}}{300}}$
+  (Công thức được tối ưu dựa trên benchmark 300 nodes tiêu chuẩn).
 
 #### 3.2.2. Heuristics pseudo-labeling (4 lớp)
 
@@ -368,37 +366,38 @@ Các bước chính:
 
 - `avg_trust`: trung bình `trust_score` của node trong cluster.
 - `std_creation_hours`: độ lệch chuẩn thời gian tạo (chuẩn hóa theo giờ).
-- `pct_co_owner`: tỷ lệ edge type `CO-OWNER`.
-- `pct_fuzzy_handle`: tỷ lệ edge type `FUZZY_HANDLE`.
-- `pct_similarity`: tỷ lệ edge type trong `SAME_AVATAR`, `SIM_BIO`,
+- `pct_co_owner`: tỷ lệ trọng số edge type `CO-OWNER`.
+- `pct_fuzzy_handle`: tỷ lệ trọng số edge type `FUZZY_HANDLE`.
+- `pct_similarity`: tỷ lệ trọng số edge type trong `SIM_BIO`,
   `CLOSE_CREATION_TIME`, `FUZZY_HANDLE`.
-- `pct_social`: tỷ lệ edge type trong nhóm social (`FOLLOW`, `UPVOTE`,
+- `pct_social`: tỷ lệ trọng số edge type trong nhóm social (`FOLLOW`, `UPVOTE`,
   `COMMENT`, `COLLECT`).
 
-3. Áp dụng **Additive Risk Scoring**:
+3. Áp dụng **Additive Risk Scoring** (Cập nhật ngưỡng rủi ro):
 
 - Điểm rủi ro được cộng theo các điều kiện (threshold) và tối đa hóa về `<= 100`.
-- Trong code các ngưỡng quan trọng gồm:
-  - `PCT_CO_OWNER_THRESHOLD = 0.1` -> +50
-  - `PCT_SIMILARITY_THRESHOLD = 0.60` -> +30
-  - `STD_CREATION_HOURS_THRESHOLD = 0.5` -> +15
-  - `PCT_FUZZY_HANDLE_THRESHOLD = 0.50` -> +15
-  - `PCT_SOCIAL_THRESHOLD = 0.20` -> +10
-  - `FALLBACK_LOW_TRUST_THRESHOLD = 5` -> +20
-  - `AVG_TRUST_THRESHOLD = 8` -> +10
+- **Bảng trọng số rủi ro mới:**
+  - `PCT_CO_OWNER > 0.15` -> **+40**
+  - `PCT_SIMILARITY >= 0.50` -> **+30**
+  - `STD_CREATION_HOURS < 0.5h` -> **+15**
+  - `PCT_FUZZY_HANDLE >= 0.50` -> **+15**
+  - `PCT_SOCIAL <= 0.15` -> **+10**
+  - `AVG_TRUST <= 5` -> **+20**
+  - `AVG_TRUST <= 10` -> **+10**
 
 4. Quy đổi sang 4 nhãn rời rạc (fuzzy labeling):
 
 | Range risk_score | Label (4 classes) |
 | ---------------- | ----------------- |
-| `< 20`           | `0_BENIGN`        |
-| `20 .. 50`       | `1_LOW_RISK`      |
-| `50 .. 80`       | `2_HIGH_RISK`     |
-| `>= 80`          | `3_MALICIOUS`     |
+| `< 20`           | `BENIGN`          |
+| `20 .. 50`       | `LOW_RISK`        |
+| `50 .. 80`       | `HIGH_RISK`       |
+| `>= 80`          | `MALICIOUS`       |
 
 1. Gán nhãn node:
 
 - node nhận nhãn dựa trên `cluster_label` của nó.
+- Nhãn được làm sạch (sanitized) bằng cách loại bỏ tiền tố số (ví dụ: `0_BENIGN` -> `BENIGN`).
 
 ---
 
@@ -440,5 +439,8 @@ Backend FastAPI/Modal cần output có:
   - `links[].weight` kiểu số float.
 
 > Lưu ý: Trong ứng dụng hiện tại, `modal_worker/app.py` đang là skeleton
+> trả về dummy graph để validate luồng. Tài liệu này mô tả workflow “full”
+> theo `docs/colab-code/fullflow.py` và `build_datasets.py`.
+> ��ng hiện tại, `modal_worker/app.py` đang là skeleton
 > trả về dummy graph để validate luồng. Tài liệu này mô tả workflow “full”
 > theo `docs/colab-code/fullflow.py` và `build_datasets.py`.

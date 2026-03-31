@@ -104,7 +104,33 @@ Thay vì chỉ trả về một con số, Module 2 cung cấp lời giải thíc
 {
   "profile_info": { ... },
   "analysis": {
-    "sybil_probability": 0.92,
+    "predict_label": "HIGH_RISK",
+    "predict_proba": {
+      "BENIGN": 0.05,
+      "LOW_RISK": 0.03,
+      "HIGH_RISK": 0.92,
+      "MALICIOUS": 0.00
+    },
+    "reasoning": [
+      "AI model detected strong Sybil-like behavior (Confidence: 92.0%). Risk-associated connections: 2x CO-OWNER, 1x SIMILARITY."
+    ],
+    "neighbor_labels": {
+      "0x123...": "HIGH_RISK",
+      "0x456...": "BENIGN"
+    }
+  },
+  "local_graph": {
+    "nodes": [ ... ],
+    "links": [ ... ]
+  }
+}
+```
+
+---
+
+> [!NOTE]
+> Module 2 được tối ưu hóa cho việc kiểm tra đơn lẻ (Single Inspection). Đối với việc phát hiện hàng loạt trên quy mô lớn, vui lòng tham khảo [Module 1 Workflow](module1_detailed_workflow.md).
+ability": 0.92,
     "classification": "HIGH_RISK",
     "reasoning": [
       "AI model detected strong Sybil-like behavior (Confidence: 92.0%). Risk-associated connections: 2x CO-OWNER, 1x SIM_BIO."

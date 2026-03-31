@@ -13,20 +13,21 @@ A high-performance backend and serverless GPU worker suite for detecting Sybil a
 
 - **Module 1: Sybil Discovery Engine (Batch)**
   - **Train-on-the-fly**: Dynamically reconstructs social graphs and trains ML models based on specific time ranges.
-  - **Deep Graph Analysis**: Combines Semantic Text Embeddings (S-BERT) with multi-layer interaction features.
-  - **Hybrid AI Training**: Employs **Graph Autoencoders (GAE)** with **GAT** layers for representation learning, followed by K-Means and heuristic pseudo-labeling.
+  - **Dynamic Clustering**: Automatically calculates the optimal number of clusters (K) using a benchmarked square-root formula.
+  - **Pruned Graph Discovery**: Focuses analysis on connected components by automatically pruning isolated nodes.
+  - **Hybrid AI Training**: Employs **Graph Autoencoders (GAE)** with **GAT** layers and smart early stopping for representation learning.
 - **Module 2: Profile Inspector (Real-time)**
   - **Hybrid AI Inference**: Uses a 5-component pipeline (S-BERT + GAT + RF) to score profiles in sub-seconds.
-  - **Explainable AI (XAI)**: Extracts **GAT Attention Weights** to visualize which social connections influenced the AI's decision.
-  - **Sync-to-Train Pipeline**: 100% feature consistency with training, including 12-stat numeric normalization.
-  - **Graph Backbone**: High-performance **NetworkX** cache in RAM for instantaneous ego-graph extraction.
+  - **Graph Enrichment**: Automatically discovers new relationships on-the-fly using a "2/3 Similarity" constraint (Avatar, Handle, Creation Time).
+  - **Optimized NLP Similarity**: Performs real-time vector similarity searches (S-BERT) against the live RAM graph using matrix acceleration.
+  - **Explainable AI (XAI)**: Extracts multi-layer **GAT Attention Weights** to visualize influential social connections.
   - **On-demand Fallback**: Automatically fetches and embeds missing nodes from Google BigQuery into the live Backbone.
 
 ---
 
 ## 🏗️ Architecture Overview
 
-The system bridges a FastAPI gateway with serverless GPU workers, maintaining a "Graph Backbone" in RAM for low-latency inspection.
+The system bridges a FastAPI gateway with serverless GPU workers, maintaining a high-performance "Graph Backbone" in RAM for low-latency inspection.
 
 ### 🛰️ Module 1: Discovery Workflow
 
@@ -41,8 +42,9 @@ sequenceDiagram
   API->>Modal: spawn(payload)
   Modal->>BigQuery: Fetch Nodes & Edges
   BigQuery-->>Modal: Raw Data
-  Modal->>Modal: Feature Engineering & GAE Training
-  Modal->>Modal: K-Means & Heuristics Labeling
+  Modal->>Modal: Pruning & Feature Engineering
+  Modal->>Modal: GAE Training (Early Stopping)
+  Modal->>Modal: Dynamic K-Means & Heuristics
   Modal-->>API: Job Result (JSON)
   User->>API: GET /sybil/discovery/status/{task_id}
   API-->>User: Labeled Graph Data
@@ -180,6 +182,7 @@ Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
 | `analysis.predict_label`     | `string` | The predicted risk level (e.g., `HIGH_RISK`).         |
 | `analysis.predict_proba`     | `object` | Dictionary of probabilities for all risk levels.      |
 | `analysis.reasoning`         | `array`  | Human-readable explanation strings.                   |
+| `analysis.neighbor_labels`   | `object` | Dictionary mapping connected node IDs to risk labels. |
 | `local_graph`                | `object` | Ego-graph (radius=1) with unified node schema.        |
 | `local_graph.nodes`          | `array`  | List of connected profiles (Matching Node Object).    |
 | `local_graph.links`          | `array`  | List of interaction edges (Matching Link Object).     |
@@ -188,13 +191,13 @@ Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
 
 ## 🧠 Hybrid AI Pipeline (Inference)
 
-To ensure maximum accuracy, the inference engine follows a strict stage process identical to the training environment:
+To ensure maximum accuracy, the inference engine follows a strict stage process 100% synchronized with the training environment:
 
-1. **Numeric Preprocessing**: Extracts 12 specific on-chain metrics (trust score, activity levels, etc.) and scales them using a pre-trained `MinMaxScaler`.
+1. **Numeric Preprocessing**: Extracts 12 specific on-chain metrics (Trust Score, Post Frequency, etc.) and scales them using a pre-trained `MinMaxScaler`.
 2. **Semantic NLP**: Generates 384D embeddings from profile metadata (Handle, Name, Bio) using `all-MiniLM-L6-v2`.
-3. **Graph Attention (GAT)**: A pre-trained GAT model processes the local ego-graph to extract a 16D structural embedding. **During this stage, edge attention weights are extracted for XAI visualization.**
-4. **Ensemble Classification**: A **Random Forest** model performs the final classification into four risk levels: `BENIGN`, `LOW_RISK`, `MEDIUM_RISK`, and `HIGH_RISK`.
-5. **Reasoning Engine**: Scans direct graph connections (e.g., `CO-OWNER`, `SIM_BIO`) to generate human-readable explanations.
+3. **Graph Attention (GAT)**: A pre-trained GAT model processes the local ego-graph to extract a 16D structural embedding. **During this stage, multi-layer attention weights are extracted for XAI visualization.**
+4. **Ensemble Classification**: A **Random Forest** model performs the final classification into four risk levels: `BENIGN`, `LOW_RISK`, `HIGH_RISK`, and `MALICIOUS`.
+5. **Reasoning Engine**: Scans direct graph connections (e.g., `CO-OWNER`, `SIMILARITY`) to generate human-readable explanations.
 
 ---
 
@@ -219,7 +222,7 @@ cp path/to/your/key.json .creds/service-account-key.json
 ```
 
 > [!IMPORTANT]
-> The system prioritizes `.creds/service-account-key.json`. Alternatively, set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
+> The system prioritizes `.creds/service-account-key.json`. Alternatively, set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable as a file path or direct JSON content string.
 
 ### 3. Deploy Modal Worker
 

@@ -110,10 +110,9 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 5: "MIRROR",
                 6: "COLLECT",
                 7: "CO-OWNER",
-                8: "SAME_AVATAR",
-                9: "FUZZY_HANDLE",
-                10: "SIM_BIO",
-                11: "CLOSE_CREATION_TIME"
+                8: "FUZZY_HANDLE",
+                9: "SIM_BIO",
+                10: "CLOSE_CREATION_TIME"
             }
             
             # Map indices to profile_ids

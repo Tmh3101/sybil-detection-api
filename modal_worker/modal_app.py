@@ -222,6 +222,8 @@ def build_pyg_graph(df_nodes, df_edges):
     import numpy as np
     import pandas as pd
     import itertools
+    import math
+    from collections import defaultdict
     from sentence_transformers import SentenceTransformer
     from torch_geometric.data import Data
     from sklearn.preprocessing import MinMaxScaler
@@ -230,13 +232,47 @@ def build_pyg_graph(df_nodes, df_edges):
     edges_list = []
     
     # 1.1 Existing edges from BigQuery (Follow/Interact)
+    # Step 1: Đếm số lần tương tác cùng loại giữa cùng cặp node
+    interaction_counts = defaultdict(int)
     for _, row in df_edges.iterrows():
+        key = (row["source"], row["target"], row["type"])
+        interaction_counts[key] += 1
+
+    BASE_WEIGHTS_LOCAL = {
+        'FOLLOW': 1.0, 'UPVOTE': 1.0, 'REACTION': 1.0,
+        'COMMENT': 2.0, 'QUOTE': 2.0, 'MIRROR': 3.0,
+        'COLLECT': 4.0, 'TIP': 4.0,
+    }
+    DIRECTED_TYPES = set(BASE_WEIGHTS_LOCAL.keys())
+
+    # Step 2: Tạo edges với log-weight (1 cạnh duy nhất mỗi cặp-type)
+    edges_list = []
+    seen = set()
+    for _, row in df_edges.iterrows():
+        key = (row["source"], row["target"], row["type"])
+        if key in seen:
+            continue
+        seen.add(key)
+        
+        n = interaction_counts[key]
+        base = BASE_WEIGHTS_LOCAL.get(row["type"], 1.0)
+        log_weight = base * (1 + math.log10(max(1, n)))
+        
         edges_list.append({
-            "source": row["source"], 
-            "target": row["target"], 
-            "type": row["type"], 
-            "weight": 2.0 if row["type"] == "FOLLOW" else 1.0
+            "source": row["source"],
+            "target": row["target"],
+            "type": row["type"],
+            "weight": log_weight
         })
+        
+        # Step 3: Sinh REV edge cho directed edges
+        if row["type"] in DIRECTED_TYPES:
+            edges_list.append({
+                "source": row["target"],
+                "target": row["source"],
+                "type": row["type"] + "_REV",
+                "weight": log_weight * 0.5
+            })
 
     # 1.2 CO-OWNER edges (Logic Python)
     df_owned = df_nodes[df_nodes["owned_by"].notnull()]
@@ -455,48 +491,64 @@ def train_gae_pipeline(payload: dict) -> dict:
         
         size = len(c_nodes_indices)
         internal_edges = cluster_internal_edges[c_id]
-        total_internal_edges = max(1, len(internal_edges))
         
-        # Counts
-        cnt_co_owner = sum(1 for e in internal_edges if e["type"] == "CO-OWNER")
-        cnt_similarity = sum(1 for e in internal_edges if e["type"] == "SIMILARITY")
-        cnt_social = sum(1 for e in internal_edges if e["type"] in ["FOLLOW", "COMMENT", "QUOTE"])
-        
-        # Pct
-        pct_co_owner = cnt_co_owner / total_internal_edges
-        pct_similarity = cnt_similarity / total_internal_edges
-        pct_social = cnt_social / total_internal_edges
-        
-        # Stats
+        # Tính intensity percentage (dựa trên tổng WEIGHT, không phải count)
+        total_weight = sum(e["weight"] for e in internal_edges) or 1.0
+
+        co_owner_weight = sum(e["weight"] for e in internal_edges 
+                            if e["type"] == "CO-OWNER")
+        similarity_weight = sum(e["weight"] for e in internal_edges 
+                                if e["type"] in ["SIM_BIO","FUZZY_HANDLE",
+                                                "CLOSE_CREATION_TIME"])
+        social_weight = sum(e["weight"] for e in internal_edges 
+                            if e["type"] in ["FOLLOW","COMMENT","QUOTE",
+                                            "UPVOTE","COLLECT","TIP"])
+        fuzzy_weight = sum(e["weight"] for e in internal_edges 
+                        if e["type"] == "FUZZY_HANDLE")
+
+        pct_co_owner = co_owner_weight / total_weight
+        pct_similarity = similarity_weight / total_weight
+        pct_social = social_weight / total_weight
+        pct_fuzzy = fuzzy_weight / total_weight
+
         avg_trust = c_df['trust_score'].mean() if not c_df.empty else 0
+
         if size > 1:
             std_creation_hours = c_df['created_dt'].std().total_seconds() / 3600.0
         else:
             std_creation_hours = 0
-            
-        # Additive Risk Scoring (0 - 100)
+
+        # Scoring với ngưỡng mới
         score = 0
         reasons = []
-        
-        if pct_co_owner > 0.1:
-            score += 50
-            reasons.append(f"High Co-owner relationship ({pct_co_owner * 100:.2f}%) +50")
-        if size > 2 and pct_similarity >= 0.6:
+
+        if pct_co_owner > 0.15:           # Thay từ 0.10
+            score += 40                    # Thay từ 50
+            reasons.append(f"High Co-owner intensity ({pct_co_owner:.1%}) +40")
+
+        if pct_similarity >= 0.50:        # Thay từ 0.60
             score += 30
-            reasons.append(f"High Similarity relationship ({pct_similarity * 100:.2f}%) +30")
+            reasons.append(f"High Similarity intensity ({pct_similarity:.1%}) +30")
+
         if size > 1 and std_creation_hours < 0.5:
             score += 15
-            reasons.append(f"Batch Creation detected (std: {std_creation_hours:.6f}) +15")
-        if pct_social <= 0.2:
+            reasons.append(f"Batch Creation (std: {std_creation_hours:.2f}h) +15")
+
+        if pct_fuzzy >= 0.50:
+            score += 15
+            reasons.append(f"Fuzzy Handle pattern ({pct_fuzzy:.1%}) +15")
+
+        if pct_social <= 0.15:            # Thay từ 0.20
             score += 10
-            reasons.append(f"Low Social interaction ({pct_social * 100:.2f}%) +10")
+            reasons.append(f"Low Social intensity ({pct_social:.1%}) +10")
+
         if avg_trust <= 5:
             score += 20
-            reasons.append(f"Very Low Trust Score (avg: {avg_trust:.2f}) +20")
-        elif avg_trust <= 8:
+            reasons.append(f"Very Low Trust ({avg_trust:.2f}) +20")
+        elif avg_trust <= 10:             # Thay từ 8
             score += 10
-            reasons.append(f"Low Trust Score (avg: {avg_trust:.2f}) +10")
-            
+            reasons.append(f"Low Trust ({avg_trust:.2f}) +10")
+
         score = min(100, score)
         risk_score = score / 100.0
         
