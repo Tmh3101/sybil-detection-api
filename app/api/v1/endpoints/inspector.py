@@ -1,3 +1,4 @@
+import pandas as pd
 import networkx as nx
 from fastapi import APIRouter, Request, HTTPException, status
 
@@ -104,6 +105,13 @@ async def get_profile_details(profile_id: str, request: Request):
                 node_risk = risk_score_map.get(node_label, 0.0)
                 node_reason = f"Labeled as {node_label} in Backbone."
 
+            # Define a safe converter for numeric attributes
+            def safe_float(x, default=0.0):
+                return float(x) if pd.notna(x) else default
+
+            def safe_int(x, default=0):
+                return int(float(x)) if pd.notna(x) else default
+
             nodes.append(
                 LocalGraphNode(
                     id=n_id,
@@ -112,16 +120,19 @@ async def get_profile_details(profile_id: str, request: Request):
                     cluster_id=0,
                     attributes={
                         "handle": attrs.get("handle", "unknown"),
-                        "trust_score": float(attrs.get("trust_score", 0.0)),
-                        "follower_count": int(attrs.get("total_followers", 0)),
-                        "following_count": int(attrs.get("total_following", 0)),
-                        "post_count": int(attrs.get("total_posts", 0)),
+                        "trust_score": safe_float(attrs.get("trust_score")),
+                        "follower_count": safe_int(attrs.get("total_followers")),
+                        "following_count": safe_int(attrs.get("total_following")),
+                        "post_count": safe_int(attrs.get("total_posts")),
                         "picture_url": attrs.get("picture_url", ""),
                         "owned_by": attrs.get("owned_by", ""),
                         "reason": node_reason,
                     },
                 )
             )
+
+        def safe_float(x, default=0.0):
+            return float(x) if pd.notna(x) else default
 
         links = []
         for u, v, data in subgraph.edges(data=True):
@@ -130,8 +141,8 @@ async def get_profile_details(profile_id: str, request: Request):
                     source=u,
                     target=v,
                     edge_type=data.get("type", "UNKNOWN"),
-                    weight=float(data.get("weight", 1.0)),
-                    gat_attention=float(data.get("gat_attention", 0.0)),
+                    weight=safe_float(data.get("weight"), 1.0),
+                    gat_attention=safe_float(data.get("gat_attention"), 0.0),
                 )
             )
 

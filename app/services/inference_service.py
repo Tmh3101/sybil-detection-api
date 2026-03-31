@@ -82,7 +82,23 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     numeric_np = np.array(numeric_data)
     if models.get("feature_scaler"):
         try:
-            numeric_scaled = models["feature_scaler"].transform(numeric_np)
+            # Suppress UserWarning by using a DataFrame with correct feature names
+            feature_names = [
+                "trust_score",
+                "total_tips",
+                "total_posts",
+                "total_quotes",
+                "total_reacted",
+                "total_reactions",
+                "total_reposts",
+                "total_collects",
+                "total_comments",
+                "total_followers",
+                "total_following",
+                "days_active",
+            ]
+            numeric_df = pd.DataFrame(numeric_np, columns=feature_names)
+            numeric_scaled = models["feature_scaler"].transform(numeric_df)
         except Exception as e:
             logger.error(f"Error scaling numeric features: {e}")
             numeric_scaled = numeric_np
@@ -178,7 +194,14 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
 
             # 3. Chuẩn hóa Embedding cho ML
             if models.get("embedding_scaler"):
-                scaled_emb = models["embedding_scaler"].transform(target_emb)
+                try:
+                    # GAT embeddings don't usually have feature names, but if it was fitted on a DF:
+                    emb_feat_names = [f"feat_{i}" for i in range(16)]
+                    target_emb_df = pd.DataFrame(target_emb, columns=emb_feat_names)
+                    scaled_emb = models["embedding_scaler"].transform(target_emb_df)
+                except Exception:
+                    # Fallback to numpy if names mismatch or it wasn't fitted with names
+                    scaled_emb = models["embedding_scaler"].transform(target_emb)
             else:
                 scaled_emb = target_emb
 
@@ -204,7 +227,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     for u, v, data in subgraph.edges(data=True):
         # Inject GAT attention into the subgraph edge (Depth 1 & 2)
         gat_attention = attention_map.get((u, v), 0.0)
-        subgraph[u][v][0]["gat_attention"] = gat_attention
+        data["gat_attention"] = gat_attention
 
         # Risk pattern detection
         RISK_EDGE_TYPES = {
@@ -214,6 +237,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             "FUZZY_HANDLE",
             "CLOSE_CREATION_TIME",
         }
+        e_type = data.get("type", "UNKNOWN")
         if e_type in RISK_EDGE_TYPES:
             risk_edges.append(e_type)
 
