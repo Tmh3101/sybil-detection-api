@@ -44,9 +44,12 @@ async def get_profile_details(profile_id: str, request: Request):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Profile not found on Lens Protocol or Backbone.",
             )
-
     try:
         # At this point, profile_id is guaranteed to be in G
+        # Define a safe converter for string attributes (handle NaN from pandas)
+        def safe_str(x, default=""):
+            return str(x) if pd.notna(x) else default
+
         # Extract Ego-graph (radius=1)
         subgraph = nx.ego_graph(G, profile_id, radius=2, undirected=False)
 
@@ -54,9 +57,9 @@ async def get_profile_details(profile_id: str, request: Request):
         node_data = G.nodes[profile_id]
         profile_info = ProfileInfo(
             id=profile_id,
-            handle=node_data.get("handle", "unknown"),
-            picture_url=node_data.get("picture_url", ""),
-            owned_by=node_data.get("owned_by", ""),
+            handle=safe_str(node_data.get("handle"), "unknown"),
+            picture_url=safe_str(node_data.get("picture_url"), ""),
+            owned_by=safe_str(node_data.get("owned_by"), ""),
         )
 
         # 2. AI Inference Analysis
@@ -119,13 +122,13 @@ async def get_profile_details(profile_id: str, request: Request):
                     risk_score=node_risk,
                     cluster_id=0,
                     attributes={
-                        "handle": attrs.get("handle", "unknown"),
+                        "handle": safe_str(attrs.get("handle"), "unknown"),
                         "trust_score": safe_float(attrs.get("trust_score")),
                         "follower_count": safe_int(attrs.get("total_followers")),
                         "following_count": safe_int(attrs.get("total_following")),
                         "post_count": safe_int(attrs.get("total_posts")),
-                        "picture_url": attrs.get("picture_url", ""),
-                        "owned_by": attrs.get("owned_by", ""),
+                        "picture_url": safe_str(attrs.get("picture_url"), ""),
+                        "owned_by": safe_str(attrs.get("owned_by"), ""),
                         "reason": node_reason,
                     },
                 )
