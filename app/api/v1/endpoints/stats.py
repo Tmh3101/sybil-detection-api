@@ -142,10 +142,21 @@ async def get_cluster_stats(request: Request):
     cluster_counts: dict = defaultdict(int)
 
     for _, attrs in G.nodes(data=True):
-        # Label integer dùng làm cluster proxy
-        # Nếu có cluster_id thì dùng, fallback về label
-        cid = attrs.get("cluster_id", attrs.get("label", 0))
-        cluster_counts[int(cid)] += 1
+        # Ưu tiên cluster_id thực tế từ K-Means
+        cid = attrs.get("cluster_id")
+
+        # Nếu node không thuộc cụm nào (ví dụ node mới add qua fallback),
+        # ta tạm thời bỏ qua hoặc gom vào nhóm 'unknown'
+        if cid is not None:
+            cluster_counts[int(cid)] += 1
+
+    if not cluster_counts:
+        # Nếu Backbone chưa có cluster_id, fallback về label để tránh trả về 0
+        # nhưng log cảnh báo để dev biết
+        logger.warning("No cluster_id found in Graph nodes, falling back to labels.")
+        for _, attrs in G.nodes(data=True):
+            cid = attrs.get("label", 0)
+            cluster_counts[int(cid)] += 1
 
     if not cluster_counts:
         return ClusterStatsResponse(

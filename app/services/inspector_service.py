@@ -35,6 +35,13 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
             data = torch.load(pt_path, map_location="cpu", weights_only=False)
             df_meta = pd.read_csv(meta_path)
 
+            # Load cluster labels if available
+            cluster_path = os.path.join(os.path.dirname(pt_path), "kmeans_labels.csv")
+            df_clusters = None
+            if os.path.exists(cluster_path):
+                logger.info(f"Loading cluster labels from {cluster_path}...")
+                df_clusters = pd.read_csv(cluster_path)
+
             bio_embs = {}
             if os.path.exists(emb_path):
                 logger.info(f"Loading pre-computed bio embeddings from {emb_path}...")
@@ -44,9 +51,9 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                     f"Bio embeddings file not found at {emb_path}. Proceeding without it."
                 )
 
-            return data, df_meta, bio_embs
+            return data, df_meta, bio_embs, df_clusters
 
-        data, df_meta, bio_embs = await asyncio.to_thread(sync_load)
+        data, df_meta, bio_embs, df_clusters = await asyncio.to_thread(sync_load)
 
         # Basic validation
         num_nodes_pt = data.num_nodes if hasattr(data, "num_nodes") else data.x.size(0)
@@ -57,6 +64,12 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
             return nx.MultiDiGraph()
 
         G = nx.MultiDiGraph()
+
+        # Create cluster mapping for fast lookup
+        cluster_map = {}
+        if df_clusters is not None:
+            # Expected columns: profile_id, cluster_label
+            cluster_map = df_clusters.set_index("profile_id")["cluster_label"].to_dict()
 
         # Add Nodes
         # Expected columns in metadata: profile_id, handle, picture_url, owned_by
@@ -94,6 +107,7 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 total_followers=row.get("total_followers", 0),
                 total_following=row.get("total_following", 0),
                 label=int(labels[i]) if i < len(labels) else 0,
+                cluster_id=cluster_map.get(profile_id),
             )
 
         # Add Edges
