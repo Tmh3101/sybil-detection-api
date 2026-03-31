@@ -129,22 +129,22 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 else None
             )
 
-            # Official mapping from the system's WEIGHTS configuration
-            EDGE_TYPE_MAP = {
-                'FOLLOW': 0,
-                'COMMENT': 1,
-                'QUOTE': 2,
-                'UPVOTE': 3,
-                'COLLECT': 4,
-                'TIP': 5,
-                'FOLLOW_REV': 6,
-                'COMMENT_REV': 7,
-                'QUOTE_REV': 8,
-                'UPVOTE_REV': 9,
-                'COLLECT_REV': 10,
-                'TIP_REV': 11,
-                'CO-OWNER': 12,
-                'SIMILARITY': 13,
+            # Reverse mapping for lookup: Integer -> String (Aligned with Colab training)
+            INT_TO_EDGE_TYPE = {
+                0: "FOLLOW",
+                1: "COMMENT",
+                2: "QUOTE",
+                3: "UPVOTE",
+                4: "COLLECT",
+                5: "TIP",
+                6: "FOLLOW_REV",
+                7: "COMMENT_REV",
+                8: "QUOTE_REV",
+                9: "UPVOTE_REV",
+                10: "COLLECT_REV",
+                11: "TIP_REV",
+                12: "CO-OWNER",
+                13: "SIMILARITY",
             }
 
             # Map indices to profile_ids
@@ -165,10 +165,10 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
 
                     # Resolve Type
                     t_int = types_list[i] if types_list and i < len(types_list) else -1
-                    t_str = EDGE_TYPE_MAP.get(t_int, "UNKNOWN")
+                    t_str = INT_TO_EDGE_TYPE.get(t_int, "UNKNOWN")
 
                     # Build attribute dictionary
-                    edge_data = {"weight": float(w), "type": t_str}
+                    edge_data = {"weight": float(w), "edge_type": t_str}
 
                     edges.append((src_pid, tgt_pid, edge_data))
                 except IndexError:

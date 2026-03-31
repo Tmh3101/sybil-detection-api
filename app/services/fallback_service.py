@@ -387,11 +387,11 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 # Check if the OTHER node exists in G
                 neighbor = tgt if src == profile_id_clean else src
                 if neighbor in G:
-                    G.add_edge(src, tgt, type=edge_type, weight=weight)
+                    G.add_edge(src, tgt, edge_type=edge_type, weight=weight)
                     if edge_type in DIRECTED_EDGE_TYPES:
                         rev_type = edge_type + "_REV"
                         rev_weight = weight * 0.5
-                        G.add_edge(tgt, src, type=rev_type, weight=rev_weight)
+                        G.add_edge(tgt, src, edge_type=rev_type, weight=rev_weight)
 
                     attached_edges += 1
                 else:
@@ -475,14 +475,14 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 G.add_edge(
                     node_data["profile_id"],
                     n_id,
-                    type="SIMILARITY",
+                    edge_type="SIMILARITY",
                     weight=sim_weight,
                     violations=violations,
                 )
                 G.add_edge(
                     n_id,
                     node_data["profile_id"],
-                    type="SIMILARITY",
+                    edge_type="SIMILARITY",
                     weight=sim_weight,
                     violations=violations,
                 )
@@ -532,13 +532,13 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                                 G.add_edge(
                                     node_data["profile_id"],
                                     target_pid,
-                                    type="SIM_BIO",
+                                    edge_type="SIM_BIO",
                                     weight=EDGE_WEIGHTS["SIM_BIO"],
                                 )
                                 G.add_edge(
                                     target_pid,
                                     node_data["profile_id"],
-                                    type="SIM_BIO",
+                                    edge_type="SIM_BIO",
                                     weight=EDGE_WEIGHTS["SIM_BIO"],
                                 )
                                 sim_count += 1
