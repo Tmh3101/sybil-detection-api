@@ -403,14 +403,28 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
 
         # 3. Graph Enrichment (Logical - Undirected)
         new_handle = str(node_data.get("handle", ""))
-        new_bio = node_data.get("bio")
+        new_bio = str(node_data.get("bio", ""))
         new_created_on = node_data.get("created_on")
 
-        # --- Tính điểm vi phạm Similarity (Ràng buộc 2/3: Bio + Handle + Close Time) ---
-        # 1. Chuẩn bị vector bio của node mới
-        new_bio_emb = node_data.get("bio_embedding")
-        has_new_bio = new_bio_emb is not None and len(new_bio_emb) > 0
+        # --- BƯỚC 1: TẠO EMBEDDING CHO NODE MỚI TRƯỚC TIÊN ---
+        new_bio_emb = None
+        has_new_bio = False
 
+        if len(new_bio.strip()) > 5:
+            model = get_sentence_model()
+            if model:
+                try:
+                    logger.info(f"[SIM_BIO] Đang encode bio mới: '{new_bio[:50]}...'")
+                    # Lấy embedding 1D Numpy Array để dùng cho scipy.cosine
+                    new_bio_emb = model.encode([new_bio])[0]
+                    has_new_bio = True
+                except Exception as e:
+                    logger.error(f"Lỗi khi encode bio cho {profile_id}: {e}")
+
+        # Lưu lại embedding vào node trong RAM để lần sau node khác có cái để so sánh
+        G.nodes[node_data["profile_id"]]["bio_embedding"] = new_bio_emb
+
+        # --- BƯỚC 2: TÍNH ĐIỂM RÀNG BUỘC 2/3 ---
         for n_id, attrs in G.nodes(data=True):
             if n_id == node_data["profile_id"]:
                 continue
@@ -419,14 +433,14 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
 
             # Tiêu chí 1: SIM_BIO (Cosine Similarity >= 0.8)
             n_bio_emb = attrs.get("bio_embedding")
-            if has_new_bio and n_bio_emb is not None and len(n_bio_emb) > 0:
+            if has_new_bio and n_bio_emb is not None:
                 try:
                     # Tính cosine similarity (1 - cosine distance)
                     sim = 1 - cosine(new_bio_emb, n_bio_emb)
-                    if sim >= 0.8:  # Ngưỡng tương đồng Bio
+                    if sim >= 0.8:
                         violations.append(f"SIM_BIO ({sim:.2f})")
                 except Exception as e:
-                    logger.warning(f"Failed to calculate SIM_BIO for {n_id}: {e}")
+                    logger.warning(f"Lỗi tính SIM_BIO với {n_id}: {e}")
 
             # Tiêu chí 2: FUZZY_HANDLE (Tên giống nhau >= 85%)
             n_handle = str(attrs.get("handle", ""))
@@ -452,13 +466,12 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                     if abs((t1 - t2).total_seconds()) <= 3600:
                         violations.append("CLOSE_CREATION_TIME")
                 except Exception as e:
-                    logger.warning(f"Failed to compare creation times: {e}")
+                    logger.warning(f"Lỗi so sánh thời gian với {n_id}: {e}")
 
             # CHỈ TẠO CẠNH NẾU VI PHẠM >= 2/3 TIÊU CHÍ
             if len(violations) >= 2:
                 sim_weight = BASE_WEIGHTS.get("SIM_BIO", 5.0)
 
-                # Lưu chi tiết violations vào metadata edge để Inspector hiển thị
                 G.add_edge(
                     node_data["profile_id"],
                     n_id,
@@ -555,6 +568,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 "MIRROR": "Interact Layer (Directed)",
                 "COLLECT": "Interact Layer (Directed)",
                 "CO-OWNER": "Co-Owner Layer (Undirected)",
+                "SIMILARITY": "Similarity Layer (Undirected)",
                 "FUZZY_HANDLE": "Similarity Layer (Undirected)",
                 "SIM_BIO": "Similarity Layer (Undirected)",
                 "CLOSE_CREATION_TIME": "Similarity Layer (Undirected)",
