@@ -153,7 +153,6 @@ async def get_cluster_stats(request: Request):
     if not cluster_counts:
         # Nếu Backbone chưa có cluster_id, fallback về label để tránh trả về 0
         # nhưng log cảnh báo để dev biết
-        logger.warning("No cluster_id found in Graph nodes, falling back to labels.")
         for _, attrs in G.nodes(data=True):
             cid = attrs.get("label", 0)
             cluster_counts[int(cid)] += 1
