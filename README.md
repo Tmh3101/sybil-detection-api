@@ -189,6 +189,83 @@ Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
 
 ---
 
+### 📊 Module 3: Statistics & Insights
+
+Provides real-time analytics and distribution data from the live RAM Backbone.
+
+#### 1. Graph Overview
+
+`GET /api/v1/stats/overview`
+
+Returns total node/edge counts and distribution across interaction layers.
+
+**Response Attributes (200 OK):**
+
+| Attribute           | Type    | Description                                             |
+| :------------------ | :------ | :------------------------------------------------------ |
+| `total_nodes`       | `int`   | Total number of profiles in the RAM Backbone.           |
+| `total_edges`       | `int`   | Total number of interactions (edges) in the Backbone.   |
+| `edge_distribution` | `array` | List of layer distributions (Follow, Interact, etc.).   |
+
+**Edge Distribution Item:**
+
+| Attribute    | Type    | Description                                  |
+| :----------- | :------ | :------------------------------------------- |
+| `layer`      | `string`| The interaction layer name.                  |
+| `count`      | `int`   | Number of edges in this layer.               |
+| `percentage` | `float` | Percentage of total edges (0.0 - 100.0).     |
+
+#### 2. Risk Distribution
+
+`GET /api/v1/stats/risk-distribution`
+
+Breakdown of the current RAM Backbone by assigned risk labels.
+
+**Response Attributes (200 OK):**
+
+| Attribute      | Type    | Description                                     |
+| :------------- | :------ | :---------------------------------------------- |
+| `distribution` | `array` | List of distribution items per risk label.      |
+
+**Risk Distribution Item:**
+
+| Attribute    | Type    | Description                                  |
+| :----------- | :------ | :------------------------------------------- |
+| `label`      | `string`| Risk classification (e.g., `HIGH_RISK`).      |
+| `count`      | `int`   | Number of profiles with this label.          |
+| `percentage` | `float` | Percentage of total profiles (0.0 - 100.0).  |
+
+#### 3. Trust Score Analysis
+
+`GET /api/v1/stats/trust-scores`
+
+Calculates statistical frequency distribution (0-100) of profile trust scores.
+
+**Response Attributes (200 OK):**
+
+| Attribute | Type    | Description                                      |
+| :-------- | :------ | :----------------------------------------------- |
+| `bins`    | `array` | List of 10 frequency bins (e.g., "0-10", "10-20").|
+| `mean`    | `float` | Arithmetic mean of all trust scores.             |
+| `median`  | `float` | Median value of all trust scores.                |
+
+#### 4. Cluster Statistics
+
+`GET /api/v1/stats/clusters`
+
+Analyzes identified clusters and their dimensions.
+
+**Response Attributes (200 OK):**
+
+| Attribute          | Type    | Description                                |
+| :----------------- | :------ | :----------------------------------------- |
+| `total_clusters`   | `int`   | Total number of identified clusters.        |
+| `avg_cluster_size` | `float` | Average number of nodes per cluster.       |
+| `largest_cluster`  | `int`   | Number of nodes in the largest cluster.    |
+| `smallest_cluster` | `int`   | Number of nodes in the smallest cluster.   |
+
+---
+
 ## 🧠 Hybrid AI Pipeline (Inference)
 
 To ensure maximum accuracy, the inference engine follows a strict stage process 100% synchronized with the training environment:
