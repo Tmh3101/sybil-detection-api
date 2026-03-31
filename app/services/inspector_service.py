@@ -131,17 +131,20 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
 
             # Official mapping from the system's WEIGHTS configuration
             EDGE_TYPE_MAP = {
-                0: "FOLLOW",
-                1: "UPVOTE",
-                2: "REACTION",
-                3: "COMMENT",
-                4: "QUOTE",
-                5: "MIRROR",
-                6: "COLLECT",
-                7: "CO-OWNER",
-                8: "FUZZY_HANDLE",
-                9: "SIM_BIO",
-                10: "CLOSE_CREATION_TIME",
+                'FOLLOW': 0,
+                'COMMENT': 1,
+                'QUOTE': 2,
+                'UPVOTE': 3,
+                'COLLECT': 4,
+                'TIP': 5,
+                'FOLLOW_REV': 6,
+                'COMMENT_REV': 7,
+                'QUOTE_REV': 8,
+                'UPVOTE_REV': 9,
+                'COLLECT_REV': 10,
+                'TIP_REV': 11,
+                'CO-OWNER': 12,
+                'SIMILARITY': 13,
             }
 
             # Map indices to profile_ids
