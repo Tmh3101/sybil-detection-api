@@ -402,8 +402,8 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
             )
 
         # 3. Graph Enrichment (Logical - Undirected)
-        new_handle = str(node_data.get("handle", ""))
-        new_bio = str(node_data.get("bio", ""))
+        new_handle = str(node_data.get("handle") or "")
+        new_bio = str(node_data.get("bio") or "")
         new_created_on = node_data.get("created_on")
 
         # --- BƯỚC 1: TẠO EMBEDDING CHO NODE MỚI TRƯỚC TIÊN ---
@@ -443,7 +443,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                     logger.warning(f"Lỗi tính SIM_BIO với {n_id}: {e}")
 
             # Tiêu chí 2: FUZZY_HANDLE (Tên giống nhau >= 85%)
-            n_handle = str(attrs.get("handle", ""))
+            n_handle = str(attrs.get("handle") or "")
             if len(new_handle) > 3 and len(n_handle) > 3:
                 ratio = difflib.SequenceMatcher(None, new_handle, n_handle).ratio()
                 if ratio >= 0.85:
@@ -573,6 +573,11 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 "SIM_BIO": "Similarity Layer (Undirected)",
                 "CLOSE_CREATION_TIME": "Similarity Layer (Undirected)",
             }
+
+            # Tự động map các cạnh _REV vào đúng Layer của cạnh gốc
+            for e_type in list(layers.keys()):
+                if e_type in DIRECTED_EDGE_TYPES:
+                    layers[e_type + "_REV"] = layers[e_type]
 
             layer_counts = {}
             for e_type, count in edge_counts.items():
