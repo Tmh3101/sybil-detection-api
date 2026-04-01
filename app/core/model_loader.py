@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv
+from torch_geometric.nn import GATv2Conv
 import joblib
 from sentence_transformers import SentenceTransformer
 import logging
@@ -21,10 +21,10 @@ class GATClassifier(nn.Module):
     ):
         super().__init__()
         # Layer 1: Multi-head attention (4 heads, 32 output dim per head)
-        self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
+        self.conv1 = GATv2Conv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
 
         # Layer 2: Final embedding layer (1 head, 16 output dim)
-        self.conv2 = GATConv(
+        self.conv2 = GATv2Conv(
             32 * 4, embedding_dim, heads=1, concat=False, dropout=0.1, edge_dim=1
         )
 

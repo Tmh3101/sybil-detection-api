@@ -423,15 +423,15 @@ def train_gae_pipeline(payload: dict) -> dict:
     """
     import torch
     import torch.nn.functional as F
-    from torch_geometric.nn import GATConv, GAE
+    from torch_geometric.nn import GATv2Conv, GAE
     from sklearn.cluster import KMeans
     import pandas as pd
 
     class GATEncoder(torch.nn.Module):
         def __init__(self, in_channels, out_channels=16):
             super().__init__()
-            self.conv1 = GATConv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
-            self.conv2 = GATConv(
+            self.conv1 = GATv2Conv(in_channels, 32, heads=4, dropout=0.1, edge_dim=1)
+            self.conv2 = GATv2Conv(
                 32 * 4, out_channels, heads=1, concat=False, dropout=0.1, edge_dim=1
             )
 
