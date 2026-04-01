@@ -163,6 +163,7 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
         edge_attr = torch.tensor(weights, dtype=torch.float).view(-1, 1)
 
     # 3. Inference
+    attention_scores = []
     try:
         models["gat_model"].eval()
         with torch.no_grad():
@@ -170,27 +171,18 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             embeddings, attn_l1, attn_l2 = models["gat_model"](x, edge_index, edge_attr)
             target_emb = embeddings[target_idx].cpu().numpy().reshape(1, -1)
 
-            # 2. Map & Merge Attention Weights (MAX across layers)
-            idx_to_node = {i: n_id for n_id, i in node_to_idx.items()}
-            attention_map = {}
-
-            def process_attn(attn_data):
-                edge_idx, weights = attn_data
-                edge_idx_np = edge_idx.cpu().numpy()
-                weights_np = weights.cpu().numpy()
-
-                for i in range(edge_idx_np.shape[1]):
-                    u_idx, v_idx = edge_idx_np[0, i], edge_idx_np[1, i]
-                    u_id, v_id = idx_to_node[u_idx], idx_to_node[v_idx]
-
-                    # Take MAX across heads
-                    val = float(np.max(weights_np[i]))
-                    attention_map[(u_id, v_id)] = max(
-                        attention_map.get((u_id, v_id), 0.0), val
-                    )
-
-            process_attn(attn_l1)
-            process_attn(attn_l2)
+            # 2. Extract Attention Weights directly by index (1:1 with input edge_index)
+            # GATv2Conv adds self-loops [E + N, heads]. We slice to get only the original E edges.
+            num_original_edges = edge_index.size(1)
+            _, weights_l1 = attn_l1
+            _, weights_l2 = attn_l2
+            
+            # Average across heads for each layer
+            w1_avg = weights_l1[:num_original_edges].mean(dim=1)
+            w2_avg = weights_l2[:num_original_edges].mean(dim=1)
+            
+            # Take the max across layers (maintains previous logic) and convert to list
+            attention_scores = torch.max(w1_avg, w2_avg).tolist()
 
             # 3. Chuẩn hóa Embedding cho ML
             if models.get("embedding_scaler"):
@@ -224,9 +216,11 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
     # 4. Reasoning & Edge Attention Assignment
     # Scan edges for risky patterns (Global scope)
     risk_edges = []
-    for u, v, data in subgraph.edges(data=True):
+    for i, (u, v, data) in enumerate(subgraph.edges(data=True)):
         # Inject GAT attention into the subgraph edge (Depth 1 & 2)
-        gat_attention = attention_map.get((u, v), 0.0)
+        gat_attention = 0.0
+        if i < len(attention_scores):
+            gat_attention = attention_scores[i]
         data["gat_attention"] = gat_attention
 
         # Risk pattern detection
