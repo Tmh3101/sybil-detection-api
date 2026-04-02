@@ -115,12 +115,16 @@ async def get_profile_details(profile_id: str, request: Request):
             def safe_int(x, default=0):
                 return int(float(x)) if pd.notna(x) else default
 
+            file_reason = safe_str(attrs.get("reason"), "")
+            if file_reason:
+                node_reason = file_reason
+
             nodes.append(
                 LocalGraphNode(
                     id=n_id,
                     risk_label=node_label,
                     risk_score=node_risk,
-                    cluster_id=0,
+                    cluster_id=safe_int(attrs.get("cluster_id"), 0),
                     attributes={
                         "handle": safe_str(attrs.get("handle"), "unknown"),
                         "trust_score": safe_float(attrs.get("trust_score")),

@@ -42,6 +42,15 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 logger.info(f"Loading cluster labels from {cluster_path}...")
                 df_clusters = pd.read_csv(cluster_path)
 
+            # Load rule-based scoring labels if available
+            rules_path = os.path.join(
+                os.path.dirname(pt_path), "rule_based_scoring_labels.csv"
+            )
+            df_rules = None
+            if os.path.exists(rules_path):
+                logger.info(f"Loading rule-based scoring labels from {rules_path}...")
+                df_rules = pd.read_csv(rules_path)
+
             bio_embs = {}
             if os.path.exists(emb_path):
                 logger.info(f"Loading pre-computed bio embeddings from {emb_path}...")
@@ -51,9 +60,11 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                     f"Bio embeddings file not found at {emb_path}. Proceeding without it."
                 )
 
-            return data, df_meta, bio_embs, df_clusters
+            return data, df_meta, bio_embs, df_clusters, df_rules
 
-        data, df_meta, bio_embs, df_clusters = await asyncio.to_thread(sync_load)
+        data, df_meta, bio_embs, df_clusters, df_rules = await asyncio.to_thread(
+            sync_load
+        )
 
         # Basic validation
         num_nodes_pt = data.num_nodes if hasattr(data, "num_nodes") else data.x.size(0)
@@ -70,6 +81,12 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
         if df_clusters is not None:
             # Expected columns: profile_id, cluster_label
             cluster_map = df_clusters.set_index("profile_id")["cluster_label"].to_dict()
+
+        # Create reason mapping
+        reason_map = {}
+        if df_rules is not None:
+            # Expected columns: profile_id, reason
+            reason_map = df_rules.set_index("profile_id")["reason"].to_dict()
 
         # Add Nodes
         # Expected columns in metadata: profile_id, handle, picture_url, owned_by
@@ -108,6 +125,7 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 total_following=row.get("total_following", 0),
                 label=int(labels[i]) if i < len(labels) else 0,
                 cluster_id=cluster_map.get(profile_id),
+                reason=reason_map.get(profile_id, ""),
             )
 
         # Add Edges
