@@ -105,7 +105,14 @@ async def get_profile_details(profile_id: str, request: Request):
             else:
                 # Use pre-labeled risk from graph Backbone for neighbors
                 node_label = neighbor_labels.get(n_id, "BENIGN")
-                node_risk = risk_score_map.get(node_label, 0.0)
+
+                # Check for risk_score in graph attributes (from rule_based_scoring_labels.csv)
+                if "risk_score" in attrs and pd.notna(attrs["risk_score"]):
+                    # Assuming risk_score is 0-100 in CSV, convert to 0.0-1.0
+                    node_risk = float(attrs["risk_score"]) / 100.0
+                else:
+                    node_risk = risk_score_map.get(node_label, 0.0)
+
                 node_reason = f"Labeled as {node_label} in Backbone."
 
             # Define a safe converter for numeric attributes

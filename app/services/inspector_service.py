@@ -84,9 +84,12 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
 
         # Create reason mapping
         reason_map = {}
+        risk_map = {}
         if df_rules is not None:
-            # Expected columns: profile_id, reason
+            # Expected columns: profile_id, reason, risk_score
             reason_map = df_rules.set_index("profile_id")["reason"].to_dict()
+            if "risk_score" in df_rules.columns:
+                risk_map = df_rules.set_index("profile_id")["risk_score"].to_dict()
 
         # Add Nodes
         # Expected columns in metadata: profile_id, handle, picture_url, owned_by
@@ -126,6 +129,7 @@ async def load_reference_graph(pt_path: str, meta_path: str) -> nx.MultiDiGraph:
                 label=int(labels[i]) if i < len(labels) else 0,
                 cluster_id=cluster_map.get(profile_id),
                 reason=reason_map.get(profile_id, ""),
+                risk_score=risk_map.get(profile_id),
             )
 
         # Add Edges
