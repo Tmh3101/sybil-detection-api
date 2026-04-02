@@ -176,11 +176,11 @@ async def evaluate_subgraph(models: dict, subgraph: nx.MultiDiGraph, target_id: 
             num_original_edges = edge_index.size(1)
             _, weights_l1 = attn_l1
             _, weights_l2 = attn_l2
-            
+
             # Average across heads for each layer
             w1_avg = weights_l1[:num_original_edges].mean(dim=1)
             w2_avg = weights_l2[:num_original_edges].mean(dim=1)
-            
+
             # Take the max across layers (maintains previous logic) and convert to list
             attention_scores = torch.max(w1_avg, w2_avg).tolist()
 
