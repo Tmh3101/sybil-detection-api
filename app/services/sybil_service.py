@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.config import get_settings
-from app.schemas.sybil import DiscoveryRequest
+from app.schemas.sybil import DiscoveryRequest, DiscoveryStatusResponse
 
 try:
     # Optional at dev-time; production expects `modal` installed and deployed.
@@ -18,7 +18,7 @@ class SybilService:
     def __init__(self):
         self.settings = get_settings()
 
-    async def start_discovery(self, req: DiscoveryRequest) -> dict:
+    async def start_discovery(self, req: DiscoveryRequest) -> DiscoveryStatusResponse:
         """
         Start Module 1 discovery.
 
@@ -37,18 +37,18 @@ class SybilService:
                 self.settings.MODAL_APP_NAME, self.settings.MODAL_DISCOVERY_FUNCTION
             )
             call = await modal_func.spawn.aio(payload)
-            return {"task_id": call.object_id}
+            return DiscoveryStatusResponse(task_id=call.object_id)
         except Exception as e:
             # If the lookup fails because the Modal app hasn't been deployed yet,
             # catch the exception and return a mock task id to test the flow.
             print(f"[Warning] Modal lookup/spawn failed: {e}. Using mock task.")
-            return {"task_id": "mock-task-12345"}
+            return DiscoveryStatusResponse(task_id="mock-task-12345")
 
-    async def get_discovery_status(self, task_id: str) -> dict:
+    async def get_discovery_status(self, task_id: str) -> DiscoveryStatusResponse:
         """
         Poll Module 1 discovery status by task id.
 
-        Returns a `DiscoveryStatusResponse`-shaped dict:
+        Returns a `DiscoveryStatusResponse`:
         - PROCESSING while the job runs
         - COMPLETED when graph data is ready
         - FAILED on unexpected errors
@@ -56,12 +56,12 @@ class SybilService:
 
         if "mock" in task_id:
             # Frontend-friendly completed payload for immediate testing.
-            return {
-                "task_id": task_id,
-                "status": "COMPLETED",
-                "progress": 100,
-                "current_step": "FINALIZE_GRAPH",
-                "graph_data": {
+            return DiscoveryStatusResponse(
+                task_id=task_id,
+                status="COMPLETED",
+                progress=100,
+                current_step="FINALIZE_GRAPH",
+                graph_data={
                     "nodes": [
                         {
                             "id": "node-1",
@@ -105,18 +105,18 @@ class SybilService:
                     ],
                     "cluster_count": 10,
                 },
-                "message": None,
-            }
+                message=None,
+            )
 
         if modal is None:
-            return {
-                "task_id": task_id,
-                "status": "FAILED",
-                "progress": 0,
-                "current_step": "MODAL_UNAVAILABLE",
-                "graph_data": None,
-                "message": "Modal SDK not available in this environment.",
-            }
+            return DiscoveryStatusResponse(
+                task_id=task_id,
+                status="FAILED",
+                progress=0,
+                current_step="MODAL_UNAVAILABLE",
+                graph_data=None,
+                message="Modal SDK not available in this environment.",
+            )
 
         try:
             call = modal.FunctionCall.from_id(task_id)
@@ -125,31 +125,31 @@ class SybilService:
             # the call will raise a TimeoutError.
             result: Any = await call.get.aio(timeout=0)
 
-            return {
-                "task_id": task_id,
-                "status": "COMPLETED",
-                "progress": 100,
-                "current_step": "COMPLETE",
-                "graph_data": result,
-                "message": None,
-            }
+            return DiscoveryStatusResponse(
+                task_id=task_id,
+                status="COMPLETED",
+                progress=100,
+                current_step="COMPLETE",
+                graph_data=result,
+                message=None,
+            )
         except Exception as exc:
             # Modal's aio get raises asyncio.TimeoutError (or similar) on timeout.
             # We check the class name or type to keep it robust.
             if exc.__class__.__name__ == "TimeoutError":
-                return {
-                    "task_id": task_id,
-                    "status": "PROCESSING",
-                    "progress": 45,
-                    "current_step": "RUNNING",
-                    "graph_data": None,
-                    "message": None,
-                }
-            return {
-                "task_id": task_id,
-                "status": "FAILED",
-                "progress": 0,
-                "current_step": "ERROR",
-                "graph_data": None,
-                "message": str(exc),
-            }
+                return DiscoveryStatusResponse(
+                    task_id=task_id,
+                    status="PROCESSING",
+                    progress=45,
+                    current_step="RUNNING",
+                    graph_data=None,
+                    message=None,
+                )
+            return DiscoveryStatusResponse(
+                task_id=task_id,
+                status="FAILED",
+                progress=0,
+                current_step="ERROR",
+                graph_data=None,
+                message=str(exc),
+            )
