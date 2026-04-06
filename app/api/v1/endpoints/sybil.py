@@ -45,6 +45,9 @@ async def start_sybil_discovery(
             node_count=node_count,
             edge_count=edge_count,
         )
+
+        print(f"discovery_history_record: {history_record}")
+
         db.add(history_record)
         db.commit()
     except Exception as db_err:
