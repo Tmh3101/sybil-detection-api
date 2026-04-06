@@ -311,12 +311,32 @@ Retrieves the 10 most recent batch discovery job summaries.
 | Attribute       | Type     | Description                         |
 | :-------------- | :------- | :---------------------------------- |
 | `id`            | `int`    | Primary key.                        |
+| `task_id`       | `string` | Unique identifier for the Modal job.|
 | `timestamp`     | `string` | ISO 8601 timestamp of the job.      |
+| `status`        | `string` | `PROCESSING` or `COMPLETED`.        |
 | `start_date`    | `string` | Start of the analyzed time window.  |
 | `end_date`      | `string` | End of the analyzed time window.    |
 | `cluster_count` | `int`    | Number of clusters identified.      |
 | `node_count`    | `int`    | Total number of nodes processed.    |
 | `edge_count`    | `int`    | Total number of edges in the graph. |
+
+---
+
+## 🗄️ Database Setup (SQLite)
+
+The project uses SQLite for local history tracking and `modal.Volume` for persistent storage in production.
+
+### Schema Migrations
+The application uses `Base.metadata.create_all` to automatically initialize the database schema. However, it does not support automatic migrations for existing tables.
+
+**If you update the database models (e.g., adding a new column), you must manually delete the existing database file to allow the system to recreate it with the new schema:**
+
+```bash
+# Delete the local database to apply schema changes
+rm data/db/sybil_history.db
+```
+
+The database will be automatically recreated on the next application start.
 
 ---
 

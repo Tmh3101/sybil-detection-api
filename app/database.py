@@ -38,7 +38,9 @@ class DiscoveryHistory(Base):
     __tablename__ = "discovery_history"
 
     id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(String, index=True, nullable=True)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    status = Column(String, default="PROCESSING")
     start_date = Column(String)
     end_date = Column(String)
     cluster_count = Column(Integer)
