@@ -24,6 +24,7 @@ image = (
         "fastapi[standard]",  # Thêm cho Module 2
         "pydantic",  # Thêm cho Module 2
         "joblib",  # Thêm để load mô hình ML
+        "SQLAlchemy",  # Thêm cho Database History
     )
     .run_commands(
         "python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', device='cpu')\""
@@ -31,6 +32,9 @@ image = (
     .add_local_dir("./app", remote_path="/root/app")
     .add_local_dir("./data", remote_path="/root/data")
 )
+
+# Volume for SQLite database
+db_volume = modal.Volume.from_name("sybil-db-volume", create_if_missing=True)
 
 # Khai báo app với Secret để truy cập Google BigQuery
 app = modal.App(
@@ -701,6 +705,7 @@ def train_gae_pipeline(payload: dict) -> dict:
     # keep_warm=1,
     startup_timeout=300,  # Chống timeout khi load file Backbone và Models nặng
     secrets=[modal.Secret.from_name("gcp-sybil-secret")],
+    volumes={"/data/db": db_volume},
 )
 @modal.asgi_app()
 def fastapi_endpoint():

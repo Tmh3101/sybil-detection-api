@@ -8,6 +8,7 @@ from app.api.v1.router import api_router
 from app.services.inspector_service import load_reference_graph
 from app.core.model_loader import load_models
 from app.core.config import get_settings
+from app.database import Base, engine
 
 settings = get_settings()
 
@@ -22,6 +23,9 @@ async def lifespan(app: FastAPI):
 
     Initializes the Graph Backbone and AI Models.
     """
+    logger.info("Initializing SQLite database...")
+    Base.metadata.create_all(bind=engine)
+
     logger.info("Initializing Graph Backbone...")
 
     app.state.graph = await load_reference_graph(
