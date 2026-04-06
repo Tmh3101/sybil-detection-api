@@ -19,7 +19,8 @@ dependencies = [
     "google-cloud-bigquery",
     "db-dtypes",
     "numpy",
-    "transformers"
+    "transformers",
+    "sqlalchemy"
 ]
 
 [project.optional-dependencies]

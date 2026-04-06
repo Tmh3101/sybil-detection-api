@@ -1,6 +1,7 @@
 import pandas as pd
 import networkx as nx
-from fastapi import APIRouter, Request, HTTPException, status
+from fastapi import APIRouter, Request, HTTPException, status, Depends
+from sqlalchemy.orm import Session
 
 from app.schemas.inspector import (
     InspectorProfileResponse,
@@ -13,12 +14,15 @@ from app.schemas.inspector import (
 
 from app.services.fallback_service import fetch_and_embed_node
 from app.services.inference_service import evaluate_subgraph
+from app.database import get_db, InspectorHistory
 
 router = APIRouter()
 
 
 @router.get("/profile/{profile_id}", response_model=InspectorProfileResponse)
-async def get_profile_details(profile_id: str, request: Request):
+async def get_profile_details(
+    profile_id: str, request: Request, db: Session = Depends(get_db)
+):
     """
     Get profile details and its ego-graph (radius=1).
     Checks RAM cache first, falls back to BigQuery if missing.
@@ -159,6 +163,24 @@ async def get_profile_details(profile_id: str, request: Request):
                     gat_attention=safe_float(data.get("gat_attention"), 0.0),
                 )
             )
+
+        try:
+            confidence = (
+                analysis.predict_proba.get(analysis.predict_label, 0.0)
+                if hasattr(analysis, "predict_proba") and analysis.predict_proba
+                else 0.0
+            )
+            history_record = InspectorHistory(
+                target_address=profile_id,
+                predict_label=analysis.predict_label,
+                confidence_score=confidence,
+                depth_filter=2,
+            )
+            db.add(history_record)
+            db.commit()
+        except Exception as db_err:
+            print(f"Failed to save prediction history: {db_err}")
+            db.rollback()
 
         return InspectorProfileResponse(
             profile_info=profile_info,

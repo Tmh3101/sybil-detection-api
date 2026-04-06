@@ -22,6 +22,10 @@ A high-performance backend and serverless GPU worker suite for detecting Sybil a
   - **Optimized NLP Similarity**: Performs real-time vector similarity searches (S-BERT) against the live RAM graph using matrix acceleration.
   - **Explainable AI (XAI)**: Extracts multi-layer **GAT Attention Weights** to visualize influential social connections.
   - **On-demand Fallback**: Automatically fetches and embeds missing nodes from Google BigQuery into the live Backbone.
+- **Persistent Prediction History**
+  - **Auto-archiving**: Automatically records every Inspector scan and Discovery run into a persistent SQLite database.
+  - **Modal Volume Storage**: Utilizes `modal.Volume` to ensure database persistence across serverless container restarts.
+  - **Audit Ready**: Provides historical metadata (target, labels, confidence, cluster counts) for past analysis retrieval.
 
 ---
 
@@ -87,6 +91,15 @@ graph TD
     Reasoning --> Response([JSON: Prob + Graph + Reason])
 ```
 
+### 🗄️ Data Persistence & Audit
+
+The system uses a persistent `modal.Volume` to store an SQLite database for history tracking.
+
+- **Storage**: `modal.Volume("sybil-db-volume")` mounted at `/data/db`.
+- **Database**: SQLite (`sybil_history.db`).
+- **ORM**: SQLAlchemy.
+- **Auto-save**: Both `/inspector/profile` and `/discovery/start` endpoints are integrated with the database to automatically record results before returning responses.
+
 ---
 
 ## 📡 API Documentation
@@ -151,12 +164,12 @@ Retrieves job status and labeled graph data upon completion.
 
 **Link Object:**
 
-| Attribute       | Type     | Description                                               |
-| :-------------- | :------- | :-------------------------------------------------------- |
-| `source`        | `string` | Source node ID.                                           |
-| `target`        | `string` | Target node ID.                                           |
-| `edge_type`     | `string` | Interaction type (e.g., `FOLLOW`, `COLLECT`).             |
-| `weight`        | `float`  | Edge weight strength.                                     |
+| Attribute       | Type     | Description                                             |
+| :-------------- | :------- | :------------------------------------------------------ |
+| `source`        | `string` | Source node ID.                                         |
+| `target`        | `string` | Target node ID.                                         |
+| `edge_type`     | `string` | Interaction type (e.g., `FOLLOW`, `COLLECT`).           |
+| `weight`        | `float`  | Edge weight strength.                                   |
 | `gat_attention` | `float`  | AI model's attention weight for this edge (0.0 to 1.0). |
 
 ---
@@ -171,21 +184,21 @@ Performs ego-graph extraction and Hybrid AI inference (S-BERT + GAT + RF).
 
 **Response Attributes (200 OK):**
 
-| Attribute                    | Type     | Description                                           |
-| :--------------------------- | :------- | :---------------------------------------------------- |
-| `profile_info`               | `object` | Basic profile metadata.                               |
-| `profile_info.id`            | `string` | Lens Profile ID.                                      |
-| `profile_info.handle`        | `string` | Lens handle.                                          |
-| `profile_info.picture_url`   | `string` | URL to profile picture.                               |
-| `profile_info.owned_by`      | `string` | Owner wallet address.                                 |
-| `analysis`                   | `object` | AI inference results.                                 |
-| `analysis.predict_label`     | `string` | The predicted risk level (e.g., `HIGH_RISK`).         |
-| `analysis.predict_proba`     | `object` | Dictionary of probabilities for all risk levels.      |
-| `analysis.reasoning`         | `array`  | Human-readable explanation strings.                   |
-| `analysis.neighbor_labels`   | `object` | Dictionary mapping connected node IDs to risk labels. |
-| `local_graph`                | `object` | Ego-graph (radius=1) with unified node schema.        |
-| `local_graph.nodes`          | `array`  | List of connected profiles (Matching Node Object).    |
-| `local_graph.links`          | `array`  | List of interaction edges (Matching Link Object).     |
+| Attribute                  | Type     | Description                                           |
+| :------------------------- | :------- | :---------------------------------------------------- |
+| `profile_info`             | `object` | Basic profile metadata.                               |
+| `profile_info.id`          | `string` | Lens Profile ID.                                      |
+| `profile_info.handle`      | `string` | Lens handle.                                          |
+| `profile_info.picture_url` | `string` | URL to profile picture.                               |
+| `profile_info.owned_by`    | `string` | Owner wallet address.                                 |
+| `analysis`                 | `object` | AI inference results.                                 |
+| `analysis.predict_label`   | `string` | The predicted risk level (e.g., `HIGH_RISK`).         |
+| `analysis.predict_proba`   | `object` | Dictionary of probabilities for all risk levels.      |
+| `analysis.reasoning`       | `array`  | Human-readable explanation strings.                   |
+| `analysis.neighbor_labels` | `object` | Dictionary mapping connected node IDs to risk labels. |
+| `local_graph`              | `object` | Ego-graph (radius=1) with unified node schema.        |
+| `local_graph.nodes`        | `array`  | List of connected profiles (Matching Node Object).    |
+| `local_graph.links`        | `array`  | List of interaction edges (Matching Link Object).     |
 
 ---
 
@@ -201,19 +214,19 @@ Returns total node/edge counts and distribution across interaction layers.
 
 **Response Attributes (200 OK):**
 
-| Attribute           | Type    | Description                                             |
-| :------------------ | :------ | :------------------------------------------------------ |
-| `total_nodes`       | `int`   | Total number of profiles in the RAM Backbone.           |
-| `total_edges`       | `int`   | Total number of interactions (edges) in the Backbone.   |
-| `edge_distribution` | `array` | List of layer distributions (Follow, Interact, etc.).   |
+| Attribute           | Type    | Description                                           |
+| :------------------ | :------ | :---------------------------------------------------- |
+| `total_nodes`       | `int`   | Total number of profiles in the RAM Backbone.         |
+| `total_edges`       | `int`   | Total number of interactions (edges) in the Backbone. |
+| `edge_distribution` | `array` | List of layer distributions (Follow, Interact, etc.). |
 
 **Edge Distribution Item:**
 
-| Attribute    | Type    | Description                                  |
-| :----------- | :------ | :------------------------------------------- |
-| `layer`      | `string`| The interaction layer name.                  |
-| `count`      | `int`   | Number of edges in this layer.               |
-| `percentage` | `float` | Percentage of total edges (0.0 - 100.0).     |
+| Attribute    | Type     | Description                              |
+| :----------- | :------- | :--------------------------------------- |
+| `layer`      | `string` | The interaction layer name.              |
+| `count`      | `int`    | Number of edges in this layer.           |
+| `percentage` | `float`  | Percentage of total edges (0.0 - 100.0). |
 
 #### 2. Risk Distribution
 
@@ -223,17 +236,17 @@ Breakdown of the current RAM Backbone by assigned risk labels.
 
 **Response Attributes (200 OK):**
 
-| Attribute      | Type    | Description                                     |
-| :------------- | :------ | :---------------------------------------------- |
-| `distribution` | `array` | List of distribution items per risk label.      |
+| Attribute      | Type    | Description                                |
+| :------------- | :------ | :----------------------------------------- |
+| `distribution` | `array` | List of distribution items per risk label. |
 
 **Risk Distribution Item:**
 
-| Attribute    | Type    | Description                                  |
-| :----------- | :------ | :------------------------------------------- |
-| `label`      | `string`| Risk classification (e.g., `HIGH_RISK`).      |
-| `count`      | `int`   | Number of profiles with this label.          |
-| `percentage` | `float` | Percentage of total profiles (0.0 - 100.0).  |
+| Attribute    | Type     | Description                                 |
+| :----------- | :------- | :------------------------------------------ |
+| `label`      | `string` | Risk classification (e.g., `HIGH_RISK`).    |
+| `count`      | `int`    | Number of profiles with this label.         |
+| `percentage` | `float`  | Percentage of total profiles (0.0 - 100.0). |
 
 #### 3. Trust Score Analysis
 
@@ -243,11 +256,11 @@ Calculates statistical frequency distribution (0-100) of profile trust scores.
 
 **Response Attributes (200 OK):**
 
-| Attribute | Type    | Description                                      |
-| :-------- | :------ | :----------------------------------------------- |
-| `bins`    | `array` | List of 10 frequency bins (e.g., "0-10", "10-20").|
-| `mean`    | `float` | Arithmetic mean of all trust scores.             |
-| `median`  | `float` | Median value of all trust scores.                |
+| Attribute | Type    | Description                                        |
+| :-------- | :------ | :------------------------------------------------- |
+| `bins`    | `array` | List of 10 frequency bins (e.g., "0-10", "10-20"). |
+| `mean`    | `float` | Arithmetic mean of all trust scores.               |
+| `median`  | `float` | Median value of all trust scores.                  |
 
 #### 4. Cluster Statistics
 
@@ -257,12 +270,53 @@ Analyzes identified clusters and their dimensions.
 
 **Response Attributes (200 OK):**
 
-| Attribute          | Type    | Description                                |
-| :----------------- | :------ | :----------------------------------------- |
-| `total_clusters`   | `int`   | Total number of identified clusters.        |
-| `avg_cluster_size` | `float` | Average number of nodes per cluster.       |
-| `largest_cluster`  | `int`   | Number of nodes in the largest cluster.    |
-| `smallest_cluster` | `int`   | Number of nodes in the smallest cluster.   |
+| Attribute          | Type    | Description                              |
+| :----------------- | :------ | :--------------------------------------- |
+| `total_clusters`   | `int`   | Total number of identified clusters.     |
+| `avg_cluster_size` | `float` | Average number of nodes per cluster.     |
+| `largest_cluster`  | `int`   | Number of nodes in the largest cluster.  |
+| `smallest_cluster` | `int`   | Number of nodes in the smallest cluster. |
+
+---
+
+### 🕒 Module 4: Prediction History
+
+Provides access to past inference and discovery runs stored in the persistent database.
+
+#### 1. Inspector History
+
+`GET /api/v1/history/inspector`
+
+Retrieves the 50 most recent profile inspection records.
+
+**Response (List of objects):**
+
+| Attribute          | Type     | Description                              |
+| :----------------- | :------- | :--------------------------------------- |
+| `id`               | `int`    | Primary key.                             |
+| `timestamp`        | `string` | ISO 8601 timestamp of the scan.          |
+| `target_address`   | `string` | The profile ID / address analyzed.       |
+| `predict_label`    | `string` | The final risk label assigned by the AI. |
+| `confidence_score` | `float`  | Probability of the assigned label.       |
+| `depth_filter`     | `int`    | Graph radius used during analysis.       |
+
+#### 2. Discovery History
+
+`GET /api/v1/history/discovery`
+
+Retrieves the 10 most recent batch discovery job summaries.
+
+**Response (List of objects):**
+
+| Attribute       | Type     | Description                         |
+| :-------------- | :------- | :---------------------------------- |
+| `id`            | `int`    | Primary key.                        |
+| `timestamp`     | `string` | ISO 8601 timestamp of the job.      |
+| `start_date`    | `string` | Start of the analyzed time window.  |
+| `end_date`      | `string` | End of the analyzed time window.    |
+| `cluster_count` | `int`    | Number of clusters identified.      |
+| `node_count`    | `int`    | Total number of nodes processed.    |
+| `edge_count`    | `int`    | Total number of edges in the graph. |
 
 ---
 
@@ -324,6 +378,7 @@ This project maintains high code quality standards through automated formatting 
 - **CI/CD**: A GitHub Action (`CI`) is configured to run these checks automatically on every push and pull request to the `main` branch.
 
 To run checks locally:
+
 ```bash
 # Format code
 black .
