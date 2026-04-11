@@ -487,7 +487,9 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
             model = get_sentence_model()
             if model:
                 try:
-                    logger.info(f"[SIM_BIO] Encoding bio for {target_pid}: '{new_bio[:50]}...'")
+                    logger.info(
+                        f"[SIM_BIO] Encoding bio for {target_pid}: '{new_bio[:50]}...'"
+                    )
                     new_bio_tensor = to_1d_float_tensor(
                         model.encode([new_bio], convert_to_tensor=True)[0]
                     )
@@ -577,7 +579,9 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 metadata=metadata,
             )
             similarity_added += 1
-            logger.info(f"   -> [SIMILARITY 2/3] Nối với {n_id} ({', '.join(violations)})")
+            logger.info(
+                f"   -> [SIMILARITY 2/3] Nối với {n_id} ({', '.join(violations)})"
+            )
 
         logger.info(
             "[SIMILARITY SUMMARY] "
