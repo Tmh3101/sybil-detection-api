@@ -54,8 +54,10 @@ async def get_profile_details(
         def safe_str(x, default=""):
             return str(x) if pd.notna(x) else default
 
-        # Extract Ego-graph (radius=1)
-        subgraph = nx.ego_graph(G, profile_id, radius=2, undirected=False)
+        # Extract Ego-graph (radius=2)
+        # Using undirected=True to capture both incoming (followers) and outgoing edges,
+        # and to correctly retrieve undirected relations like SIMILARITY and CO-OWNER.
+        subgraph = nx.ego_graph(G, profile_id, radius=2, undirected=True)
 
         # 1. Profile Info
         node_data = G.nodes[profile_id]
