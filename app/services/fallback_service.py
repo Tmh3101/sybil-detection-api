@@ -10,7 +10,6 @@ import math
 from datetime import datetime
 from google.cloud import bigquery
 from google.oauth2 import service_account
-from scipy.spatial.distance import cosine
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +27,7 @@ BASE_WEIGHTS = {
     # Tầng Co-Owner (undirected)
     "CO-OWNER": 10.0,
     # Tầng Similarity (undirected)
+    "SIMILARITY": 5.0,
     "FUZZY_HANDLE": 5.0,
     "SIM_BIO": 5.0,
     "CLOSE_CREATION_TIME": 5.0,
@@ -54,6 +54,8 @@ DIRECTED_EDGE_TYPES = {
     "TIP",
 }
 
+INVALID_WALLET_VALUES = {"", "unknown", "none", "nan", "null", "n/a"}
+
 
 def compute_log_weight(edge_type: str, n_interactions: int = 1) -> float:
     """W_final = W_base * (1 + log10(N))"""
@@ -78,6 +80,43 @@ def get_sentence_model():
             logger.error(f"Failed to load SentenceTransformer: {e}")
             _sentence_model = False  # Mark as failed so we don't retry endlessly
     return _sentence_model if _sentence_model is not False else None
+
+
+def normalize_wallet(value) -> str | None:
+    if value is None:
+        return None
+    wallet = str(value).strip().lower()
+    return wallet if wallet not in INVALID_WALLET_VALUES else None
+
+
+def normalize_handle(value) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def safe_to_datetime(value):
+    if value is None:
+        return None
+    try:
+        return value if isinstance(value, datetime) else pd.to_datetime(value)
+    except Exception:
+        return None
+
+
+def to_1d_float_tensor(embedding):
+    if embedding is None:
+        return None
+    try:
+        if isinstance(embedding, torch.Tensor):
+            tensor = embedding.detach().float().cpu()
+        else:
+            tensor = torch.tensor(embedding, dtype=torch.float32)
+        if tensor.ndim > 1:
+            tensor = tensor.view(-1)
+        return tensor if tensor.numel() > 0 else None
+    except Exception:
+        return None
 
 
 def parse_metadata(meta_str):
@@ -210,11 +249,11 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
 
         row = df_node.iloc[0]
         node_data = {
-            "profile_id": profile_id,
+            "profile_id": profile_id_clean,
             "handle": str(row.get("handle", "unknown")),
             "display_name": str(row.get("display_name", "")),
             "picture_url": parse_metadata(row.get("raw_metadata")),
-            "owned_by": str(row.get("owned_by", "")),
+            "owned_by": str(row.get("owned_by", "")).strip().lower(),
             "bio": parse_bio(row.get("raw_metadata")),
             "created_on": row["created_on"],
             "trust_score": (
@@ -402,161 +441,170 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
             )
 
         # 3. Graph Enrichment (Logical - Undirected)
-        new_handle = str(node_data.get("handle") or "")
+        target_pid = node_data["profile_id"]
+        new_wallet = normalize_wallet(node_data.get("owned_by"))
+        new_handle = normalize_handle(node_data.get("handle"))
         new_bio = str(node_data.get("bio") or "")
-        new_created_on = node_data.get("created_on")
+        new_created_on = safe_to_datetime(node_data.get("created_on"))
 
-        # --- BƯỚC 1: TẠO EMBEDDING CHO NODE MỚI TRƯỚC TIÊN ---
-        new_bio_emb = None
-        has_new_bio = False
+        # 3.1 CO-OWNER edges
+        co_owner_candidates = 0
+        co_owner_added = 0
+        if new_wallet:
+            for n_id, attrs in G.nodes(data=True):
+                if n_id == target_pid:
+                    continue
+                if normalize_wallet(attrs.get("owned_by")) != new_wallet:
+                    continue
 
+                co_owner_candidates += 1
+                G.add_edge(
+                    target_pid,
+                    n_id,
+                    edge_type="CO-OWNER",
+                    weight=EDGE_WEIGHTS["CO-OWNER"],
+                    shared_wallet=new_wallet,
+                )
+                G.add_edge(
+                    n_id,
+                    target_pid,
+                    edge_type="CO-OWNER",
+                    weight=EDGE_WEIGHTS["CO-OWNER"],
+                    shared_wallet=new_wallet,
+                )
+                co_owner_added += 1
+        else:
+            logger.info(
+                f"[CO-OWNER] Skip for {target_pid}: owned_by is empty/invalid ({node_data.get('owned_by')})."
+            )
+        logger.info(
+            f"[CO-OWNER SUMMARY] candidates={co_owner_candidates}, undirected_pairs_added={co_owner_added}, directed_edges_added={co_owner_added * 2}"
+        )
+
+        # 3.2 SIMILARITY edges (canonical SIMILARITY type, 2/3 rule)
+        new_bio_tensor = None
         if len(new_bio.strip()) > 5:
             model = get_sentence_model()
             if model:
                 try:
-                    logger.info(f"[SIM_BIO] Đang encode bio mới: '{new_bio[:50]}...'")
-                    # Lấy embedding 1D Numpy Array để dùng cho scipy.cosine
-                    new_bio_emb = model.encode([new_bio])[0]
-                    has_new_bio = True
+                    logger.info(f"[SIM_BIO] Encoding bio for {target_pid}: '{new_bio[:50]}...'")
+                    new_bio_tensor = to_1d_float_tensor(
+                        model.encode([new_bio], convert_to_tensor=True)[0]
+                    )
                 except Exception as e:
                     logger.error(f"Lỗi khi encode bio cho {profile_id}: {e}")
 
-        # Lưu lại embedding vào node trong RAM để lần sau node khác có cái để so sánh
-        G.nodes[node_data["profile_id"]]["bio_embedding"] = new_bio_emb
+        # Persist normalized tensor for future fallback calls
+        G.nodes[target_pid]["bio_embedding"] = new_bio_tensor
 
-        # --- BƯỚC 2: TÍNH ĐIỂM RÀNG BUỘC 2/3 ---
+        sim_bio_scores = {}
+        if new_bio_tensor is not None:
+            valid_neighbors = []
+            existing_embs = []
+            for n_id, attrs in G.nodes(data=True):
+                if n_id == target_pid:
+                    continue
+                cached_emb = to_1d_float_tensor(attrs.get("bio_embedding"))
+                if cached_emb is not None:
+                    valid_neighbors.append(n_id)
+                    existing_embs.append(cached_emb)
+
+            if valid_neighbors:
+                try:
+                    existing_matrix = torch.stack(existing_embs)
+                    cosine_scores = torch.nn.functional.cosine_similarity(
+                        existing_matrix, new_bio_tensor.unsqueeze(0), dim=1
+                    )
+                    sim_bio_scores = {
+                        valid_neighbors[idx]: float(score.item())
+                        for idx, score in enumerate(cosine_scores)
+                    }
+                except Exception as e:
+                    logger.warning(
+                        f"[SIM_BIO] Failed to compute batched cosine scores for {target_pid}: {e}"
+                    )
+
+        similarity_candidates = 0
+        similarity_added = 0
+        similarity_skipped_by_rule = 0
         for n_id, attrs in G.nodes(data=True):
-            if n_id == node_data["profile_id"]:
+            if n_id == target_pid:
                 continue
 
+            similarity_candidates += 1
             violations = []
+            detail = {}
 
-            # Tiêu chí 1: SIM_BIO (Cosine Similarity >= 0.8)
-            n_bio_emb = attrs.get("bio_embedding")
-            if has_new_bio and n_bio_emb is not None:
-                try:
-                    # Tính cosine similarity (1 - cosine distance)
-                    sim = 1 - cosine(new_bio_emb, n_bio_emb)
-                    if sim >= 0.8:
-                        violations.append(f"SIM_BIO ({sim:.2f})")
-                except Exception as e:
-                    logger.warning(f"Lỗi tính SIM_BIO với {n_id}: {e}")
+            sim_bio = sim_bio_scores.get(n_id)
+            if sim_bio is not None and sim_bio >= 0.8:
+                violations.append(f"SIM_BIO ({sim_bio:.2f})")
+                detail["SIM_BIO"] = round(sim_bio, 4)
 
-            # Tiêu chí 2: FUZZY_HANDLE (Tên giống nhau >= 85%)
-            n_handle = str(attrs.get("handle") or "")
+            n_handle = normalize_handle(attrs.get("handle"))
             if len(new_handle) > 3 and len(n_handle) > 3:
                 ratio = difflib.SequenceMatcher(None, new_handle, n_handle).ratio()
                 if ratio >= 0.85:
                     violations.append(f"FUZZY_HANDLE ({ratio:.2f})")
+                    detail["FUZZY_HANDLE"] = round(ratio, 4)
 
-            # Tiêu chí 3: CLOSE_CREATION_TIME (Cách nhau <= 1 giờ)
-            n_created_on = attrs.get("created_on")
-            if new_created_on and n_created_on:
-                try:
-                    t1 = (
-                        new_created_on
-                        if isinstance(new_created_on, datetime)
-                        else pd.to_datetime(new_created_on)
-                    )
-                    t2 = (
-                        n_created_on
-                        if isinstance(n_created_on, datetime)
-                        else pd.to_datetime(n_created_on)
-                    )
-                    if abs((t1 - t2).total_seconds()) <= 3600:
-                        violations.append("CLOSE_CREATION_TIME")
-                except Exception as e:
-                    logger.warning(f"Lỗi so sánh thời gian với {n_id}: {e}")
+            n_created_on = safe_to_datetime(attrs.get("created_on"))
+            if new_created_on is not None and n_created_on is not None:
+                diff_sec = abs((new_created_on - n_created_on).total_seconds())
+                if diff_sec <= 3600:
+                    violations.append("CLOSE_CREATION_TIME")
+                    detail["CLOSE_CREATION_TIME_SECONDS"] = float(diff_sec)
 
-            # CHỈ TẠO CẠNH NẾU VI PHẠM >= 2/3 TIÊU CHÍ
-            if len(violations) >= 2:
-                sim_weight = BASE_WEIGHTS.get("SIM_BIO", 5.0)
+            if len(violations) < 2:
+                similarity_skipped_by_rule += 1
+                continue
 
-                G.add_edge(
-                    node_data["profile_id"],
-                    n_id,
-                    edge_type="SIMILARITY",
-                    weight=sim_weight,
-                    violations=violations,
-                )
-                G.add_edge(
-                    n_id,
-                    node_data["profile_id"],
-                    edge_type="SIMILARITY",
-                    weight=sim_weight,
-                    violations=violations,
-                )
-                logger.info(
-                    f"   -> [SIMILARITY 2/3] Nối với {n_id} ({', '.join(violations)})"
-                )
+            sim_weight = EDGE_WEIGHTS["SIMILARITY"]
+            metadata = {"total_flags": len(violations), "detail": detail}
+            G.add_edge(
+                target_pid,
+                n_id,
+                edge_type="SIMILARITY",
+                weight=sim_weight,
+                violations=violations,
+                metadata=metadata,
+            )
+            G.add_edge(
+                n_id,
+                target_pid,
+                edge_type="SIMILARITY",
+                weight=sim_weight,
+                violations=violations,
+                metadata=metadata,
+            )
+            similarity_added += 1
+            logger.info(f"   -> [SIMILARITY 2/3] Nối với {n_id} ({', '.join(violations)})")
 
-        # 3.5 SIMILARITY edges (NLP Bio) - Optimized with Pre-computed Embeddings
-        if new_bio and isinstance(new_bio, str) and len(new_bio.strip()) > 5:
-            model = get_sentence_model()
-            if model:
-                try:
-                    from sentence_transformers import util
-
-                    logger.info(
-                        f"[SIM_BIO CHECK] Bio của node mới: '{new_bio[:50]}...'"
-                    )
-
-                    # 1. Encode ONLY the new user's bio ONCE
-                    new_bio_tensor = model.encode([new_bio], convert_to_tensor=True)
-
-                    # 2. Gather existing embeddings from RAM graph
-                    valid_neighbors = []
-                    existing_embs = []
-
-                    for n_id, attrs in G.nodes(data=True):
-                        if n_id == node_data["profile_id"]:
-                            continue
-
-                        cached_emb = attrs.get("bio_embedding")
-                        if cached_emb is not None:
-                            valid_neighbors.append(n_id)
-                            existing_embs.append(cached_emb)
-
-                    # 3. Compute scores using matrix multiplication if we have neighbors
-                    if valid_neighbors:
-                        # Stack all cached embeddings into a single [N, 384] tensor
-                        existing_matrix = torch.stack(existing_embs)
-
-                        # Compute cosine similarity for all neighbors at once
-                        cosine_scores = util.cos_sim(new_bio_tensor, existing_matrix)[0]
-
-                        sim_count = 0
-                        for idx, score in enumerate(cosine_scores):
-                            if score.item() >= 0.85:
-                                target_pid = valid_neighbors[idx]
-                                G.add_edge(
-                                    node_data["profile_id"],
-                                    target_pid,
-                                    edge_type="SIM_BIO",
-                                    weight=EDGE_WEIGHTS["SIM_BIO"],
-                                )
-                                G.add_edge(
-                                    target_pid,
-                                    node_data["profile_id"],
-                                    edge_type="SIM_BIO",
-                                    weight=EDGE_WEIGHTS["SIM_BIO"],
-                                )
-                                sim_count += 1
-                                # logger.info(f"   -> [SIM_BIO] Nối với {target_pid} (Score: {score.item():.4f})")
-
-                        if sim_count > 0:
-                            logger.info(f"Added {sim_count} optimized SIM_BIO edges.")
-                except Exception as e:
-                    logger.error(
-                        f"Error computing optimized SIM_BIO for {profile_id}: {e}"
-                    )
+        logger.info(
+            "[SIMILARITY SUMMARY] "
+            f"candidates={similarity_candidates}, "
+            f"undirected_pairs_added={similarity_added}, "
+            f"skipped_by_2of3={similarity_skipped_by_rule}, "
+            f"directed_edges_added={similarity_added * 2}"
+        )
 
         # --- [EDGES VERIFICATION] ---
         try:
-            edge_counts = {}
-            for u, v, data in G.edges(node_data["profile_id"], data=True):
+            out_edge_counts = {}
+            in_edge_counts = {}
+
+            for _, _, data in G.out_edges(target_pid, data=True):
                 e_type = data.get("edge_type", "UNKNOWN")
-                edge_counts[e_type] = edge_counts.get(e_type, 0) + 1
+                out_edge_counts[e_type] = out_edge_counts.get(e_type, 0) + 1
+
+            for _, _, data in G.in_edges(target_pid, data=True):
+                e_type = data.get("edge_type", "UNKNOWN")
+                in_edge_counts[e_type] = in_edge_counts.get(e_type, 0) + 1
+
+            edge_counts = {}
+            for e_type, count in out_edge_counts.items():
+                edge_counts[e_type] = edge_counts.get(e_type, 0) + count
+            for e_type, count in in_edge_counts.items():
+                edge_counts[e_type] = edge_counts.get(e_type, 0) + count
 
             # Ánh xạ Edge Type sang Layer
             layers = {
@@ -585,7 +633,9 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 layer_counts[layer] = layer_counts.get(layer, 0) + count
 
             logger.info(f"--- [EDGES VERIFICATION: {profile_id}] ---")
-            logger.info(f"Tổng số Edges kết nối: {sum(edge_counts.values())}")
+            logger.info(
+                f"Tổng số Edges kết nối: outgoing={sum(out_edge_counts.values())}, incoming={sum(in_edge_counts.values())}, combined={sum(edge_counts.values())}"
+            )
             logger.info("Thống kê theo Tầng (Layers):")
             for layer, count in layer_counts.items():
                 logger.info(f"  - {layer}: {count} edges")
