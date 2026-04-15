@@ -706,8 +706,8 @@ def train_gae_pipeline(payload: dict) -> dict:
 @app.function(
     image=image,
     gpu="T4",
-    memory=8192,  # Đã tăng lên 8GB
-    concurrency_limit=1,  # Bảo vệ file SQLite khỏi tình trạng tranh chấp ghi
+    memory=8192,
+    max_containers=1,
     startup_timeout=300,
     secrets=[modal.Secret.from_name("gcp-sybil-secret")],
     volumes={"/data/db": db_volume},
