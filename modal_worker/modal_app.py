@@ -420,7 +420,12 @@ def build_pyg_graph(df_nodes, df_edges):
     return data, node_ids, edges_list
 
 
-@app.function(gpu="T4", timeout=1800)
+@app.function(
+    gpu="L4",  # Tăng nhẹ từ T4 lên L4 (Nhanh gấp 2-4 lần)
+    cpu=4.0,  # Cấp 4 Lõi CPU để xử lý Pandas, BigQuery và K-Means cực nhanh
+    memory=8192,  # Cấp 8GB RAM để xử lý Dataframe 5000 nodes không bị tràn
+    timeout=1800,  # Giữ nguyên timeout 30 phút phòng trường hợp đồ thị quá phức tạp
+)
 def train_gae_pipeline(payload: dict) -> dict:
     """
     Module 1 worker pipeline (Fixed Ingestion & Engineering):
@@ -701,9 +706,9 @@ def train_gae_pipeline(payload: dict) -> dict:
 @app.function(
     image=image,
     gpu="T4",
-    memory=4096,  # Cấp 4GB RAM cho việc chứa Graph và Model AI
-    # keep_warm=1,
-    startup_timeout=300,  # Chống timeout khi load file Backbone và Models nặng
+    memory=8192,  # Đã tăng lên 8GB
+    concurrency_limit=1,  # Bảo vệ file SQLite khỏi tình trạng tranh chấp ghi
+    startup_timeout=300,
     secrets=[modal.Secret.from_name("gcp-sybil-secret")],
     volumes={"/data/db": db_volume},
 )
