@@ -1,6 +1,6 @@
 import pandas as pd
 import networkx as nx
-from fastapi import APIRouter, Request, HTTPException, status, Depends
+from fastapi import APIRouter, Request, HTTPException, status, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.schemas.inspector import (
@@ -21,7 +21,10 @@ router = APIRouter()
 
 @router.get("/profile/{profile_id}", response_model=InspectorProfileResponse)
 async def get_profile_details(
-    profile_id: str, request: Request, db: Session = Depends(get_db)
+    profile_id: str,
+    request: Request,
+    debug: bool = Query(default=False),
+    db: Session = Depends(get_db),
 ):
     """
     Get profile details and its ego-graph (radius=1).
@@ -40,9 +43,10 @@ async def get_profile_details(
     profile_id = profile_id.lower()
 
     # Traffic Controller: Cache Hit vs Cache Miss
+    fallback_debug = None
     if profile_id not in G:
         # Cache Miss -> Trigger Fallback Pipeline
-        success = await fetch_and_embed_node(request.app, profile_id)
+        success, fallback_debug = await fetch_and_embed_node(request.app, profile_id)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -165,6 +169,11 @@ async def get_profile_details(
                     gat_attention=safe_float(data.get("gat_attention"), 0.0),
                 )
             )
+        edge_type_counts = {}
+        for link in links:
+            edge_type_counts[link.edge_type] = (
+                edge_type_counts.get(link.edge_type, 0) + 1
+            )
 
         try:
             confidence = (
@@ -184,10 +193,20 @@ async def get_profile_details(
             print(f"Failed to save prediction history: {db_err}")
             db.rollback()
 
+        debug_payload = None
+        if debug:
+            debug_payload = {
+                "fallback": fallback_debug,
+                "subgraph_edge_type_counts": edge_type_counts,
+                "co_owner_count": edge_type_counts.get("CO-OWNER", 0),
+                "similarity_count": edge_type_counts.get("SIMILARITY", 0),
+            }
+
         return InspectorProfileResponse(
             profile_info=profile_info,
             analysis=analysis,
             local_graph=LocalGraph(nodes=nodes, links=links),
+            debug=debug_payload,
         )
 
     except Exception as e:

@@ -8,6 +8,7 @@ import torch
 import difflib
 import math
 from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
@@ -196,12 +197,18 @@ def get_bq_client():
             return bigquery.Client(location="US")
 
 
-async def fetch_and_embed_node(app, profile_id: str) -> bool:
+async def fetch_and_embed_node(
+    app, profile_id: str
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """
     Fetch a single node and its related edges from BigQuery, then embed into app.state.graph.
     Only edges connecting to existing nodes in the graph are added.
     """
     profile_id_clean = profile_id.lower()
+    debug_stats: Dict[str, Any] = {
+        "fallback_triggered": True,
+        "target_profile_id": profile_id_clean,
+    }
 
     def sync_fallback():
         client = get_bq_client()
@@ -381,11 +388,14 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         node_data, df_edges = await asyncio.to_thread(sync_fallback)
 
         if not node_data:
-            return False
+            debug_stats["result"] = "profile_not_found"
+            return False, debug_stats
 
         G = app.state.graph
+        graph_nodes_before = G.number_of_nodes()
+        debug_stats["graph_nodes_before"] = graph_nodes_before
         logger.info(f"========== BẮT ĐẦU FALLBACK PIPELINE CHO {profile_id} ==========")
-        logger.info(f"[GRAPH STATE] Hiện có {G.number_of_nodes()} nodes trong RAM.")
+        logger.info(f"[GRAPH STATE] Hiện có {graph_nodes_before} nodes trong RAM.")
 
         # Add Node
         G.add_node(
@@ -439,6 +449,15 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
             logger.info(
                 f"[PHYSICAL EDGES SUMMARY] Đã nối: {attached_edges} edges. Bỏ qua (ngoài RAM): {ignored_edges} edges."
             )
+        else:
+            attached_edges = 0
+            ignored_edges = 0
+
+        debug_stats["physical_edges"] = {
+            "raw_fetched": int(len(df_edges)) if df_edges is not None else 0,
+            "attached": attached_edges,
+            "ignored_outside_ram": ignored_edges,
+        }
 
         # 3. Graph Enrichment (Logical - Undirected)
         target_pid = node_data["profile_id"]
@@ -450,6 +469,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         # 3.1 CO-OWNER edges
         co_owner_candidates = 0
         co_owner_added = 0
+        co_owner_samples = []
         if new_wallet:
             for n_id, attrs in G.nodes(data=True):
                 if n_id == target_pid:
@@ -473,6 +493,10 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                     shared_wallet=new_wallet,
                 )
                 co_owner_added += 1
+                if len(co_owner_samples) < 5:
+                    co_owner_samples.append(
+                        {"neighbor_id": n_id, "shared_wallet": new_wallet}
+                    )
         else:
             logger.info(
                 f"[CO-OWNER] Skip for {target_pid}: owned_by is empty/invalid ({node_data.get('owned_by')})."
@@ -480,6 +504,13 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         logger.info(
             f"[CO-OWNER SUMMARY] candidates={co_owner_candidates}, undirected_pairs_added={co_owner_added}, directed_edges_added={co_owner_added * 2}"
         )
+        debug_stats["co_owner"] = {
+            "wallet_valid": bool(new_wallet),
+            "wallet": new_wallet,
+            "candidates": co_owner_candidates,
+            "undirected_pairs_added": co_owner_added,
+            "samples": co_owner_samples,
+        }
 
         # 3.2 SIMILARITY edges (canonical SIMILARITY type, 2/3 rule)
         new_bio_tensor = None
@@ -500,6 +531,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         G.nodes[target_pid]["bio_embedding"] = new_bio_tensor
 
         sim_bio_scores = {}
+        neighbors_with_embedding = 0
         if new_bio_tensor is not None:
             valid_neighbors = []
             existing_embs = []
@@ -510,6 +542,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 if cached_emb is not None:
                     valid_neighbors.append(n_id)
                     existing_embs.append(cached_emb)
+            neighbors_with_embedding = len(valid_neighbors)
 
             if valid_neighbors:
                 try:
@@ -529,6 +562,7 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         similarity_candidates = 0
         similarity_added = 0
         similarity_skipped_by_rule = 0
+        similarity_samples = []
         for n_id, attrs in G.nodes(data=True):
             if n_id == target_pid:
                 continue
@@ -558,6 +592,16 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
 
             if len(violations) < 2:
                 similarity_skipped_by_rule += 1
+                if len(similarity_samples) < 5:
+                    similarity_samples.append(
+                        {
+                            "neighbor_id": n_id,
+                            "decision": "skipped_by_2of3",
+                            "signals": violations,
+                            "signal_count": len(violations),
+                            "detail": detail,
+                        }
+                    )
                 continue
 
             sim_weight = EDGE_WEIGHTS["SIMILARITY"]
@@ -579,6 +623,16 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
                 metadata=metadata,
             )
             similarity_added += 1
+            if len(similarity_samples) < 5:
+                similarity_samples.append(
+                    {
+                        "neighbor_id": n_id,
+                        "decision": "added",
+                        "signals": violations,
+                        "signal_count": len(violations),
+                        "detail": detail,
+                    }
+                )
             logger.info(
                 f"   -> [SIMILARITY 2/3] Nối với {n_id} ({', '.join(violations)})"
             )
@@ -590,6 +644,13 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
             f"skipped_by_2of3={similarity_skipped_by_rule}, "
             f"directed_edges_added={similarity_added * 2}"
         )
+        debug_stats["similarity"] = {
+            "candidates": similarity_candidates,
+            "neighbors_with_embedding": neighbors_with_embedding,
+            "undirected_pairs_added": similarity_added,
+            "skipped_by_2of3": similarity_skipped_by_rule,
+            "samples": similarity_samples,
+        }
 
         # --- [EDGES VERIFICATION] ---
         try:
@@ -652,9 +713,13 @@ async def fetch_and_embed_node(app, profile_id: str) -> bool:
         except Exception as e:
             logger.error(f"Lỗi khi thống kê Edges: {e}")
 
+        debug_stats["graph_nodes_after"] = G.number_of_nodes()
+        debug_stats["result"] = "embedded"
         logger.info("========== KẾT THÚC FALLBACK PIPELINE ==========")
-        return True
+        return True, debug_stats
 
     except Exception as e:
         logger.exception(f"Error in Fallback Pipeline for {profile_id}: {e}")
-        return False
+        debug_stats["result"] = "error"
+        debug_stats["error"] = str(e)
+        return False, debug_stats

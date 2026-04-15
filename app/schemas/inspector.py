@@ -40,3 +40,4 @@ class InspectorProfileResponse(BaseModel):
     profile_info: ProfileInfo
     analysis: AnalysisInfo
     local_graph: LocalGraph
+    debug: Optional[Dict[str, Any]] = None
